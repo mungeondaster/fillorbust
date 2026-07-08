@@ -179,7 +179,14 @@ export class NetSession {
   startListening() {
     onChildAdded(ref(this.db, `rooms/${this.roomCode}/events`), (snap) => {
       const entry = snap.val();
-      if (!entry || entry.connId === this.connId) return; // never replay my own actions
+      if (!entry) return;
+      // Every other event type is applied locally by its own sender first
+      // (see rollDice/confirmHold/humanBank/etc.), so self-originated copies
+      // are dropped here to avoid double-applying them. gameStarted is the
+      // one exception: it's the *only* path (for every client, including
+      // the host) that actually constructs the Game and leaves the lobby,
+      // so the sender needs to receive its own copy too.
+      if (entry.connId === this.connId && entry.type !== "gameStarted") return;
       const waiters = this._waiters.get(entry.type);
       if (waiters && waiters.length) {
         waiters.shift()(entry.payload);

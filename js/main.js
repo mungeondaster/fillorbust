@@ -1,4 +1,4 @@
-import { Game } from "./game.js?v=17";
+import { Game } from "./game.js?v=20";
 import { MULTIPLAYER_ENABLED } from "./firebaseConfig.js";
 
 const setupScreen = document.getElementById("setupScreen");
@@ -126,7 +126,7 @@ function setupOnlineMode() {
     const name = createNameInput.value.trim() || "Host";
     createRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=17");
+      const { NetSession } = await import("./net.js?v=20");
       const net = new NetSession();
       const { playerId } = await net.createRoom(name);
       enterLobby(net, playerId);
@@ -147,7 +147,7 @@ function setupOnlineMode() {
     }
     joinRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=17");
+      const { NetSession } = await import("./net.js?v=20");
       const net = new NetSession();
       const { playerId } = await net.joinRoom(code, name);
       enterLobby(net, playerId);
@@ -168,6 +168,8 @@ function enterLobby(net, myFirebasePlayerId) {
   const lobbyStartBtn = document.getElementById("lobbyStartBtn");
   const lobbyWaitingMsg = document.getElementById("lobbyWaitingMsg");
   const lobbyLeaveBtn = document.getElementById("lobbyLeaveBtn");
+
+  window.__net = net; // debug handle
 
   setupScreen.classList.add("hidden");
   lobbyScreen.classList.remove("hidden");
@@ -195,18 +197,25 @@ function enterLobby(net, myFirebasePlayerId) {
       net.addCpuPlayer(`CPU ${cpuCount + 1}`, "normal");
     });
 
-    lobbyStartBtn.addEventListener("click", () => {
+    lobbyStartBtn.addEventListener("click", async () => {
       const targetScore = Number(lobbyTargetScoreSel.value);
       // Keep each player's Firebase id alongside the shape Game already
       // expects, so every client can work out which array index is "them"
       // once this same list comes back through the gameStarted event.
-      const players = latestPlayers.map((p) => ({
-        fbId: p.id,
-        name: p.name,
-        type: p.type,
-        difficulty: p.difficulty,
-      }));
-      net.startGame(players, targetScore);
+      // Firebase rejects writes containing `undefined` -- human players
+      // never have a `difficulty`, so that field is only included for CPUs.
+      const players = latestPlayers.map((p) => {
+        const player = { fbId: p.id, name: p.name, type: p.type };
+        if (p.type === "cpu") player.difficulty = p.difficulty;
+        return player;
+      });
+      lobbyStartBtn.disabled = true;
+      try {
+        await net.startGame(players, targetScore);
+      } catch (err) {
+        lobbyStartBtn.disabled = false;
+        window.alert("Couldn't start the game: " + (err.message || err));
+      }
     });
   }
 

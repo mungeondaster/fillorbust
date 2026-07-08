@@ -9,14 +9,14 @@
 // from hiding this config.
 // ---------------------------------------------------------------------------
 
-export const MULTIPLAYER_ENABLED = false;
+export const MULTIPLAYER_ENABLED = true;
 
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyDL329ZteGmrNkLvNbA_iXIi379CC9Gxq0",
+  authDomain: "fillorbust-4857f.firebaseapp.com",
+  databaseURL: "https://fillorbust-4857f-default-rtdb.firebaseio.com",
+  projectId: "fillorbust-4857f",
+  storageBucket: "fillorbust-4857f.firebasestorage.app",
+  messagingSenderId: "710184090319",
+  appId: "1:710184090319:web:098529cb369d0a74b195ba",
 };

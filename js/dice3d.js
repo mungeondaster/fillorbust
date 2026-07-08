@@ -1,5 +1,5 @@
 import * as THREE from "./vendor/three.module.min.js";
-import { FACE_TO_BOX_MATERIAL } from "./constants.js?v=17";
+import { FACE_TO_BOX_MATERIAL } from "./constants.js?v=20";
 
 const DIE_SIZE = 1;
 const HALF = DIE_SIZE / 2;
