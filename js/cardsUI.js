@@ -1,0 +1,157 @@
+// Renders the draw pile / discard pile / active card as authentic-looking
+// physical playing cards: slightly uneven stacking, soft shadows, a flip
+// animation on draw.
+
+function seededOffset(seed) {
+  // deterministic pseudo-random jitter per stack layer, so piles look
+  // consistently "messy" rather than reshuffling their jitter every render
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  const frac = x - Math.floor(x);
+  return frac;
+}
+
+function buildStackLayers(container, count, cls, topLabel) {
+  container.innerHTML = "";
+  const layers = Math.min(count, 7);
+  for (let i = 0; i < layers; i++) {
+    const layer = document.createElement("div");
+    layer.className = `card-layer ${cls}`;
+    const rot = (seededOffset(i + 1) - 0.5) * 6;
+    const dx = (seededOffset(i + 7) - 0.5) * 5;
+    const dy = -i * 1.1;
+    layer.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
+    layer.style.zIndex = String(i);
+    if (topLabel && i === layers - 1) {
+      layer.classList.add("card-layer-labeled");
+      layer.textContent = topLabel;
+    }
+    container.appendChild(layer);
+  }
+  return layers;
+}
+
+export class CardTable {
+  constructor(root) {
+    this.root = root;
+    this.root.innerHTML = `
+      <div class="pile-wrap">
+        <div class="pile-label">Draw</div>
+        <div class="draw-stack pile" id="drawStack"></div>
+        <div class="pile-count" id="drawCount">0</div>
+      </div>
+      <div class="active-slot">
+        <div class="card-slide" id="cardSlide">
+          <div class="flip-card" id="flipCard">
+            <div class="flip-inner">
+              <div class="card-face card-back"></div>
+              <div class="card-face card-front" id="cardFront"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pile-wrap">
+        <div class="pile-label">Discard</div>
+        <div class="discard-stack pile" id="discardStack"></div>
+        <div class="pile-count" id="discardCount">0</div>
+      </div>
+    `;
+    this.drawStack = this.root.querySelector("#drawStack");
+    this.discardStack = this.root.querySelector("#discardStack");
+    this.drawCount = this.root.querySelector("#drawCount");
+    this.discardCount = this.root.querySelector("#discardCount");
+    this.cardSlide = this.root.querySelector("#cardSlide");
+    this.flipCard = this.root.querySelector("#flipCard");
+    this.flipInner = this.root.querySelector(".flip-inner");
+    this.cardFront = this.root.querySelector("#cardFront");
+  }
+
+  render(deck) {
+    buildStackLayers(this.drawStack, deck.drawPile.length, "back");
+    const lastDiscard = deck.discardPile[deck.discardPile.length - 1];
+    buildStackLayers(
+      this.discardStack,
+      deck.discardPile.length,
+      "discard-face",
+      lastDiscard && lastDiscard.label
+    );
+    this.drawCount.textContent = String(deck.drawPile.length);
+    this.discardCount.textContent = String(deck.discardPile.length);
+  }
+
+  // Offset (in px) from `fromEl`'s center to `toEl`'s center -- used to slide
+  // the active card between the draw pile / center / discard pile without
+  // reflowing layout (a plain CSS transform).
+  _offsetBetween(fromEl, toEl) {
+    const a = fromEl.getBoundingClientRect();
+    const b = toEl.getBoundingClientRect();
+    return {
+      dx: a.left + a.width / 2 - (b.left + b.width / 2),
+      dy: a.top + a.height / 2 - (b.top + b.height / 2),
+    };
+  }
+
+  async draw(card, deck) {
+    const hadPreviousCard = !!this.cardFront.dataset.type;
+
+    if (hadPreviousCard) {
+      // Slide the card that was showing off toward the discard pile before
+      // bringing in the new one.
+      const { dx, dy } = this._offsetBetween(this.discardStack, this.cardSlide);
+      this.cardSlide.style.transition = "transform 0.45s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.4s ease-in";
+      this.cardSlide.style.transform = `translate(${dx}px, ${dy}px) scale(0.8) rotate(-8deg)`;
+      this.cardSlide.style.opacity = "0";
+      await wait(450);
+      // The deck already moved that card into discardPile -- reflect it now,
+      // right as it visually lands there.
+      this.render(deck);
+    }
+
+    // Snap (no transition) to the draw pile's position, face-down. The
+    // offset must be measured from cardSlide's neutral (centered) position,
+    // not wherever it was just left mid-discard-animation, or the distance
+    // ends up doubled and the card appears to fly in from way off-screen.
+    this.cardSlide.style.transition = "none";
+    this.cardSlide.style.transform = "translate(0px, 0px) scale(1) rotate(0deg)";
+    const { dx: sx, dy: sy } = this._offsetBetween(this.drawStack, this.cardSlide);
+    this.cardSlide.style.transform = `translate(${sx}px, ${sy}px) scale(0.82)`;
+    this.cardSlide.style.opacity = "1";
+    // .flip-inner has its own CSS transition for the flip itself; disable it
+    // here too so un-flipping to face-down is instant (invisible) instead of
+    // visibly rotating through the old card's face while we reposition.
+    this.flipInner.style.transition = "none";
+    this.flipCard.classList.remove("flipped");
+    void this.cardSlide.offsetWidth; // force reflow so all of the above lands instantly
+    this.flipInner.style.transition = ""; // restore for the real reveal flip later
+
+    // Slide it from the draw pile out to the center.
+    this.cardSlide.style.transition = "transform 0.4s cubic-bezier(0.2, 0.7, 0.3, 1)";
+    this.cardSlide.style.transform = "translate(0, 0) scale(1) rotate(0deg)";
+    await wait(400);
+
+    this.cardFront.innerHTML = `
+      <div class="card-title">${card.label}</div>
+      <div class="card-tooltip">${card.desc}</div>
+    `;
+    this.cardFront.dataset.type = card.id;
+    await wait(80);
+    this.flipCard.classList.add("flipped");
+    await wait(500);
+    this.render(deck);
+  }
+
+  // Played when the draw pile runs out and the discards are shuffled back
+  // in -- a quick shake/glow on both piles so it reads as a deliberate
+  // reshuffle rather than the counts just silently jumping.
+  async playShuffleAnimation() {
+    this.flipCard.classList.remove("flipped");
+    this.drawStack.classList.add("shuffling");
+    this.discardStack.classList.add("shuffling");
+    await wait(650);
+    this.drawStack.classList.remove("shuffling");
+    this.discardStack.classList.remove("shuffling");
+  }
+}
+
+function wait(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}

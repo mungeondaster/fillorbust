@@ -1,0 +1,12 @@
+{
+  "name": "fill-or-bust",
+  "version": "1.0.0",
+  "description": "Fill or Bust dice & card game",
+  "scripts": {
+    "start": "npx serve -p 3006 -s ."
+  },
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.180.0"
+  }
+}

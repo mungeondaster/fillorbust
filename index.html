@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fill or Bust</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Cinzel:wght@600;700&family=Rubik+Mono+One&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=17">
+</head>
+<body>
+
+<div id="setupScreen" class="screen">
+  <div class="setup-card">
+    <h1>FILL <span class="or">or</span> BUST</h1>
+    <p class="subtitle">A dice &amp; card push-your-luck game</p>
+
+    <div id="modeTabs" class="mode-tabs hidden">
+      <button id="localModeBtn" class="mode-tab active" type="button">Local Game</button>
+      <button id="onlineModeBtn" class="mode-tab" type="button">Play Online</button>
+    </div>
+
+    <div id="localSetupPanel">
+      <div class="setup-section">
+        <label>Target Score</label>
+        <select id="targetScoreSel">
+          <option value="5000">5,000</option>
+          <option value="10000" selected>10,000</option>
+        </select>
+      </div>
+
+      <div class="setup-section">
+        <label>Players</label>
+        <div id="playerRows" class="player-rows"></div>
+        <button id="addPlayerBtn" class="secondary-btn">+ Add Player</button>
+      </div>
+
+      <button id="startGameBtn" class="primary-btn big">Start Game</button>
+    </div>
+
+    <div id="onlineSetupPanel" class="hidden">
+      <div id="onlineChoicePane">
+        <button id="createRoomChoiceBtn" class="primary-btn big">Create Room</button>
+        <button id="joinRoomChoiceBtn" class="secondary-btn big">Join Room</button>
+      </div>
+
+      <div id="createRoomPane" class="hidden">
+        <div class="setup-section">
+          <label>Your Name</label>
+          <input type="text" id="createNameInput" maxlength="14" placeholder="Your name" />
+        </div>
+        <button id="createRoomBtn" class="primary-btn big">Create Room</button>
+        <button class="secondary-btn online-back-btn" type="button">Back</button>
+        <p class="form-error hidden"></p>
+      </div>
+
+      <div id="joinRoomPane" class="hidden">
+        <div class="setup-section">
+          <label>Room Code</label>
+          <input type="text" id="joinCodeInput" maxlength="4" placeholder="ABCD" class="room-code-input" />
+        </div>
+        <div class="setup-section">
+          <label>Your Name</label>
+          <input type="text" id="joinNameInput" maxlength="14" placeholder="Your name" />
+        </div>
+        <button id="joinRoomBtn" class="primary-btn big">Join Room</button>
+        <button class="secondary-btn online-back-btn" type="button">Back</button>
+        <p class="form-error hidden"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="lobbyScreen" class="screen hidden">
+  <div class="setup-card">
+    <h1>Room <span id="lobbyRoomCode" class="room-code"></span></h1>
+    <p class="subtitle">Share this code with your family so they can join</p>
+
+    <div id="lobbyPlayers" class="player-rows lobby-players"></div>
+
+    <div id="lobbyHostControls" class="hidden">
+      <div class="setup-section">
+        <label>Target Score</label>
+        <select id="lobbyTargetScoreSel">
+          <option value="5000">5,000</option>
+          <option value="10000" selected>10,000</option>
+        </select>
+      </div>
+      <button id="lobbyAddCpuBtn" class="secondary-btn">+ Add CPU Player</button>
+      <button id="lobbyStartBtn" class="primary-btn big" disabled>Start Game</button>
+    </div>
+
+    <p id="lobbyWaitingMsg" class="subtitle hidden">Waiting for the host to start the game&hellip;</p>
+
+    <button id="lobbyLeaveBtn" class="secondary-btn">Leave Room</button>
+  </div>
+</div>
+
+<div id="gameScreen" class="screen hidden">
+  <div id="statusBar">
+    <button id="mainMenuBtn" class="secondary-btn small" title="Return to Main Menu">Main Menu</button>
+    <span id="statusText">Ready</span>
+  </div>
+
+  <div id="mainLayout">
+    <aside id="playerList" class="panel"></aside>
+
+    <div id="tableArea">
+      <div id="cardTable" class="panel card-panel"></div>
+
+      <div id="diceStage">
+        <div id="diceCanvas"></div>
+        <div id="bustStamp" class="bust-stamp hidden">BUST</div>
+        <div id="noDiceStamp" class="no-dice-stamp hidden">
+          <div class="no-dice-die">
+            <div class="pip-grid">
+              <span class="pip on"></span><span class="pip"></span><span class="pip on"></span>
+              <span class="pip on"></span><span class="pip"></span><span class="pip on"></span>
+              <span class="pip on"></span><span class="pip"></span><span class="pip on"></span>
+            </div>
+            <div class="no-dice-slash"></div>
+          </div>
+          <div class="no-dice-label">NO DICE</div>
+        </div>
+      </div>
+
+      <div id="diceRow">
+        <div class="die-slot inactive" data-i="0"><div class="pip-grid"></div></div>
+        <div class="die-slot inactive" data-i="1"><div class="pip-grid"></div></div>
+        <div class="die-slot inactive" data-i="2"><div class="pip-grid"></div></div>
+        <div class="die-slot inactive" data-i="3"><div class="pip-grid"></div></div>
+        <div class="die-slot inactive" data-i="4"><div class="pip-grid"></div></div>
+        <div class="die-slot inactive" data-i="5"><div class="pip-grid"></div></div>
+      </div>
+
+      <div id="pendingScore"></div>
+      <div id="heldRow"></div>
+
+      <div id="controls">
+        <button id="rollBtn" class="primary-btn" disabled>Roll Dice</button>
+        <button id="confirmHoldBtn" class="secondary-btn" disabled>Hold Selected</button>
+        <button id="bankBtn" class="bank-btn" disabled>Bank Points</button>
+      </div>
+
+      <div id="fillPrompt" class="hidden">
+        <span>FILL! All six dice scored.</span>
+        <button id="continueFillBtn" class="primary-btn">Draw &amp; Roll Again</button>
+        <button id="bankFillBtn" class="bank-btn">Bank Now</button>
+      </div>
+    </div>
+
+    <div id="scorePanel" class="panel">
+      <div class="score-label">Turn Score</div>
+      <div id="turnScoreVal">0</div>
+    </div>
+  </div>
+</div>
+
+<div id="gameOverModal" class="modal hidden">
+  <div class="modal-card">
+    <div id="gameOverText"></div>
+    <button id="playAgainBtn" class="primary-btn">Play Again</button>
+  </div>
+</div>
+
+<div id="vengeanceModal" class="modal hidden">
+  <div class="modal-card">
+    <h2>Vengeance 2500</h2>
+    <p id="vengeanceText"></p>
+    <div class="modal-actions">
+      <button id="vengeancePlayBtn" class="bank-btn">Play It</button>
+      <button id="vengeanceDeclineBtn" class="secondary-btn">Decline</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js?v=17"></script>
+</body>
+</html>
