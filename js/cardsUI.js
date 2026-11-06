@@ -33,12 +33,16 @@ function buildStackLayers(container, count, cls, topLabel) {
 export class CardTable {
   constructor(root) {
     this.root = root;
+    // Layout (grid areas, see style.css): title, the card in play, its rule
+    // spelled out (no hover needed -- phones can't hover), then the piles.
     this.root.innerHTML = `
-      <div class="pile-wrap">
+      <div class="panel-title"><span>Card in Play</span></div>
+      <div class="pile-wrap draw">
         <div class="pile-label">Draw</div>
         <div class="draw-stack pile" id="drawStack"></div>
         <div class="pile-count" id="drawCount">0</div>
       </div>
+      <div class="card-rule" id="cardRule" aria-live="polite"></div>
       <div class="active-slot">
         <div class="card-slide" id="cardSlide">
           <div class="flip-card" id="flipCard">
@@ -49,7 +53,7 @@ export class CardTable {
           </div>
         </div>
       </div>
-      <div class="pile-wrap">
+      <div class="pile-wrap discard">
         <div class="pile-label">Discard</div>
         <div class="discard-stack pile" id="discardStack"></div>
         <div class="pile-count" id="discardCount">0</div>
@@ -63,6 +67,7 @@ export class CardTable {
     this.flipCard = this.root.querySelector("#flipCard");
     this.flipInner = this.root.querySelector(".flip-inner");
     this.cardFront = this.root.querySelector("#cardFront");
+    this.cardRule = this.root.querySelector("#cardRule");
   }
 
   render(deck) {
@@ -92,6 +97,7 @@ export class CardTable {
 
   async draw(card, deck) {
     const hadPreviousCard = !!this.cardFront.dataset.type;
+    this.cardRule.classList.add("fading");
 
     if (hadPreviousCard) {
       // Slide the card that was showing off toward the discard pile before
@@ -128,14 +134,15 @@ export class CardTable {
     this.cardSlide.style.transform = "translate(0, 0) scale(1) rotate(0deg)";
     await wait(400);
 
-    this.cardFront.innerHTML = `
-      <div class="card-title">${card.label}</div>
-      <div class="card-tooltip">${card.desc}</div>
-    `;
+    this.cardFront.innerHTML = `<div class="card-title">${card.label}</div>`;
+    this.cardFront.title = card.desc;
     this.cardFront.dataset.type = card.id;
     await wait(80);
     this.flipCard.classList.add("flipped");
-    await wait(500);
+    await wait(300);
+    this.cardRule.textContent = card.desc;
+    this.cardRule.classList.remove("fading");
+    await wait(200);
     this.render(deck);
   }
 

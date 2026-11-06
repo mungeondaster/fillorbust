@@ -1,7 +1,7 @@
-import { Game } from "./game.js?v=24";
-import { Dice3D } from "./dice3d.js?v=24";
-import { getSceneId } from "./scenes/index.js?v=24";
-import { unlockAudio, isMuted, setMuted } from "./sound.js?v=24";
+import { Game } from "./game.js?v=32";
+import { Dice3D } from "./dice3d.js?v=32";
+import { getSceneId } from "./scenes/index.js?v=32";
+import { unlockAudio, isMuted, setMuted } from "./sound.js?v=32";
 import { MULTIPLAYER_ENABLED } from "./firebaseConfig.js";
 
 const setupScreen = document.getElementById("setupScreen");
@@ -129,7 +129,7 @@ function setupOnlineMode() {
     const name = createNameInput.value.trim() || "Host";
     createRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=24");
+      const { NetSession } = await import("./net.js?v=32");
       const net = new NetSession();
       const { playerId } = await net.createRoom(name);
       enterLobby(net, playerId);
@@ -150,7 +150,7 @@ function setupOnlineMode() {
     }
     joinRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=24");
+      const { NetSession } = await import("./net.js?v=32");
       const net = new NetSession();
       const { playerId } = await net.joinRoom(code, name);
       enterLobby(net, playerId);
@@ -277,10 +277,17 @@ function launchGame(players, targetScore, netInfo) {
       statusEl.textContent = text;
     },
     setTurnScore(n) {
-      turnScoreEl.textContent = String(n);
+      const text = fmt(n);
+      if (turnScoreEl.textContent === text) return;
+      turnScoreEl.textContent = text;
+      if (n > 0) {
+        turnScoreEl.classList.remove("bump");
+        void turnScoreEl.offsetWidth;
+        turnScoreEl.classList.add("bump");
+      }
     },
     setHeld(values) {
-      heldRowEl.textContent = values.length ? `Held: ${values.join(", ")}` : "";
+      heldRowEl.textContent = values.length ? `Held ${values.join(" · ")}` : "";
     },
     setRollEnabled(v) {
       rollBtn.disabled = !(v && isMyTurn());
@@ -296,9 +303,14 @@ function launchGame(players, targetScore, netInfo) {
       players.forEach((p, i) => {
         const el = document.createElement("div");
         el.className = "player-card" + (i === currentIndex ? " active" : "");
-        el.innerHTML = `<span class="p-name">${p.name}${p.type === "cpu" ? " 🤖" : ""}</span><span class="p-score">${p.score}</span>`;
+        const pct = Math.max(0, Math.min(100, (p.score / targetScore) * 100));
+        el.innerHTML =
+          `<span class="p-name"></span><span class="p-score">${fmt(p.score)}</span>` +
+          `<span class="p-bar"><span style="width:${pct}%"></span></span>`;
+        el.querySelector(".p-name").textContent = p.name + (p.type === "cpu" ? " 🤖" : "");
         playersEl.appendChild(el);
       });
+      playersEl.querySelector(".active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
     },
     syncDiceState(dice) {
       dice.forEach((d, i) => {
@@ -306,6 +318,7 @@ function launchGame(players, targetScore, netInfo) {
         slot.classList.toggle("held", d.state === "tray");
         slot.classList.remove("selected");
       });
+      game?.dice3d.setSelected([]);
     },
     setDiceFaces(indices, values) {
       indices.forEach((idx, k) => {
@@ -334,20 +347,22 @@ function launchGame(players, targetScore, netInfo) {
         slot.classList.remove("selected", "clickable");
       });
       confirmBtn.disabled = true;
-      pendingScoreEl.textContent = "";
+      pendingScoreEl.innerHTML = "&nbsp;";
+      game?.dice3d.setSelected([]);
     },
     setSelectedDice(indices) {
       dieSlots.forEach((slot, i) => {
         slot.classList.toggle("selected", indices.includes(i));
       });
+      game?.dice3d.setSelected(indices);
     },
     setPendingScore(result) {
       if (!result.valid || result.score === 0) {
-        pendingScoreEl.textContent = "No score selected";
+        pendingScoreEl.textContent = "Pick scoring dice";
         pendingScoreEl.classList.remove("valid");
         confirmBtn.disabled = true;
       } else {
-        pendingScoreEl.textContent = `Hold for +${result.score}`;
+        pendingScoreEl.textContent = `Hold for +${fmt(result.score)}`;
         pendingScoreEl.classList.add("valid");
         confirmBtn.disabled = false;
       }
@@ -417,6 +432,10 @@ function launchGame(players, targetScore, netInfo) {
     });
   }
 
+  function fmt(n) {
+    return Number(n).toLocaleString("en-US");
+  }
+
   function setPips(slot, value) {
     const layouts = {
       1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8],
@@ -449,6 +468,10 @@ function launchGame(players, targetScore, netInfo) {
       game.toggleSelect(i);
     });
   });
+  // Dice can also be picked by clicking/tapping them on the 3D table.
+  game.dice3d.isDieClickable = (i) => dieSlots[i].classList.contains("clickable");
+  game.dice3d.onDieClick = (i) => game.toggleSelect(i);
+  document.getElementById("targetLabel").textContent = `to ${fmt(targetScore)}`;
 
   rollBtn.addEventListener("click", () => game.rollDice());
   bankBtn.addEventListener("click", () => game.humanBank());
@@ -491,6 +514,21 @@ function launchGame(players, targetScore, netInfo) {
 
   // debug handle for inspecting game/dice state from the console
   window.__game = game;
+}
+
+// Tiny drawn dice for the scoring cheat sheet (<span class="mini-dice" data-v="111">).
+const MINI_PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+for (const el of document.querySelectorAll(".mini-dice")) {
+  for (const ch of el.dataset.v) {
+    const die = document.createElement("span");
+    die.className = "mini-die";
+    for (let i = 0; i < 9; i++) {
+      const pip = document.createElement("i");
+      if (MINI_PIPS[ch].includes(i)) pip.className = "on";
+      die.appendChild(pip);
+    }
+    el.appendChild(die);
+  }
 }
 
 // Browsers keep audio locked until the first tap/click; any one will do.

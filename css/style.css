@@ -220,54 +220,65 @@ button:not(:disabled):active { transform: translateY(0); }
 
 /* ---------------- Game screen ---------------- */
 
-#gameScreen { display: block; padding: 0; align-items: initial; justify-content: initial; min-height: 100vh; }
+/*
+  The game screen is exactly one viewport tall and never scrolls. The 3D
+  table (#diceStage) is the flexible element: it absorbs whatever height
+  is left after the fixed-size bars, and the 3D camera re-fits the tray to
+  whatever shape it ends up. Three arrangements:
+    wide (>1100px):   scoreboard | table + action bar | card in play
+    medium:           table + action bar | scoreboard over card
+    phone (<=720px):  slim scoreboard strip, card strip, table, action bar
+*/
+#gameScreen {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  height: 100vh;
+  height: 100dvh;   /* mobile browsers: excludes the URL bar */
+  min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
+  justify-content: flex-start;
+}
 
 #statusBar {
-  position: relative;
-  text-align: center;
-  padding: 10px;
-  font-weight: 600;
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
   background: rgba(0,0,0,0.35);
-  color: var(--gold-light);
-  letter-spacing: 0.5px;
   border-bottom: 1px solid rgba(212,175,55,0.25);
 }
-#mainMenuBtn {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+#mainMenuBtn { justify-self: start; }
+#statusText {
+  font-weight: 600;
+  color: var(--gold-light);
+  letter-spacing: 0.5px;
+  text-align: center;
+  font-size: 1.05rem;
 }
-.status-tools {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-.status-tools select {
-  padding: 5px 8px;
-  font-size: 0.8rem;
-  width: auto;
-}
+.status-tools { justify-self: end; display: flex; gap: 6px; align-items: center; }
+.status-tools select { padding: 5px 8px; font-size: 0.8rem; width: auto; }
 .icon-btn { padding: 5px 9px; line-height: 1; }
-@media (max-width: 600px) {
-  /* Stack the status bar so the buttons never cover the turn text. */
-  #statusBar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
-  #mainMenuBtn, .status-tools { position: static; transform: none; }
-  #statusText { order: 3; width: 100%; }
-}
 
-#mainLayout {
+#gameLayout {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 220px 1fr 260px;
-  gap: 16px;
-  padding: 16px;
-  max-width: 1400px;
+  grid-template-columns: 230px minmax(0, 1fr) 250px;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "score stage card";
+  gap: 14px;
+  padding: 14px;
+  width: 100%;
+  max-width: 1700px;
   margin: 0 auto;
 }
+#leftCol { grid-area: score; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+#cardTable { grid-area: card; }
+#stageCol { grid-area: stage; }
 
 .panel {
   background: var(--panel-bg);
@@ -275,34 +286,190 @@ button:not(:disabled):active { transform: translateY(0); }
   border-radius: 14px;
   padding: 14px;
 }
-
-#playerList { display: flex; flex-direction: column; gap: 8px; height: fit-content; }
-.player-card {
+.panel-title {
   display: flex;
   justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 8px;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.75rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--gold-light);
+  opacity: 0.85;
+  margin-bottom: 10px;
+}
+.panel-sub { letter-spacing: 0.5px; text-transform: none; opacity: 0.7; color: var(--cream); }
+
+/* ---- Scoreboard ---- */
+#scoreboard { flex: none; }
+#playerList { display: flex; flex-direction: column; gap: 8px; }
+.player-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 9px 11px 11px;
+  border-radius: 10px;
   background: rgba(255,255,255,0.05);
   border: 1px solid transparent;
+  transition: background 0.25s ease, border-color 0.25s ease;
 }
 .player-card.active {
   border-color: var(--gold);
   background: rgba(212,175,55,0.15);
+  box-shadow: 0 0 18px rgba(212,175,55,0.18);
 }
-.player-card .p-score { font-weight: 700; color: var(--gold-light); }
+.player-card.active .p-name::before {
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--gold-light);
+  vertical-align: middle;
+  animation: turnPulse 1.4s ease-in-out infinite;
+}
+@keyframes turnPulse { 50% { opacity: 0.25; } }
+.player-card .p-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-card .p-score { font-weight: 700; color: var(--gold-light); font-variant-numeric: tabular-nums; }
+.p-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.p-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), var(--gold-light));
+  transition: width 0.6s ease;
+}
 
-#tableArea { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-
-.card-panel {
-  width: 100%;
-  min-height: 190px;
-  display: flex;
+/* ---- Scoring reference ---- */
+.score-ref {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 10px;
+  margin: 0 0 10px;
   align-items: center;
-  justify-content: space-around;
 }
+.score-ref dt { margin: 0; font-size: 0.78rem; opacity: 0.85; }
+.score-ref dt small { opacity: 0.7; }
+.score-ref dd { margin: 0; font-weight: 700; color: var(--gold-light); font-size: 0.85rem; text-align: right; font-variant-numeric: tabular-nums; }
+.mini-dice { display: inline-flex; gap: 2px; vertical-align: middle; }
+.mini-die {
+  display: grid;
+  grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  width: 15px;
+  height: 15px;
+  padding: 2px;
+  gap: 1px;
+  border-radius: 3px;
+  background: linear-gradient(160deg, var(--cream), #e8dfc8);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+.mini-die i { border-radius: 50%; }
+.mini-die i.on { background: var(--ink); }
+.rule-notes { margin: 0; padding-left: 16px; font-size: 0.76rem; line-height: 1.4; opacity: 0.8; }
+.rule-notes li + li { margin-top: 4px; }
+.rule-notes b { color: var(--gold-light); font-weight: 600; }
 
-#diceStage { position: relative; width: 100%; }
-#diceCanvas { width: 100%; height: 440px; }
+/* ---- Card in play ---- */
+#cardTable {
+  align-self: start;
+  max-height: 100%;
+  display: grid;
+  grid-template-areas: "title title" "active active" "rule rule" "draw discard";
+  grid-template-columns: 1fr 1fr;
+  justify-items: center;
+  gap: 10px 8px;
+  --card-w: 150px;
+  --card-h: 210px;
+  --pile-w: 70px;
+  --pile-h: 98px;
+}
+#cardTable > .panel-title { grid-area: title; justify-self: stretch; margin-bottom: 0; }
+#cardTable .active-slot { grid-area: active; }
+.card-rule {
+  grid-area: rule;
+  min-height: 3.6em;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  text-align: center;
+  opacity: 0.9;
+  transition: opacity 0.25s ease;
+}
+.card-rule.fading { opacity: 0; }
+#cardTable .pile-wrap.draw { grid-area: draw; }
+#cardTable .pile-wrap.discard { grid-area: discard; }
+
+/* ---- Table + action bar ---- */
+#stageCol { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
+#diceStage {
+  position: relative;
+  flex: 1;
+  min-height: 220px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(212,175,55,0.25);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+  background: rgba(0,0,0,0.25);
+}
+#diceCanvas { position: absolute; inset: 0; }
+#diceCanvas canvas { display: block; }
+
+#actionBar {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "turn select controls";
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px;
+}
+#scorePanel { grid-area: turn; text-align: center; min-width: 120px; }
+#selectArea {
+  grid-area: select;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  /* The six dice size themselves to whatever room this column gets. */
+  container-type: inline-size;
+}
+#controls { grid-area: controls; }
+
+/* FILL! decision, shown over the table itself. */
+.stage-banner {
+  position: absolute;
+  left: 50%;
+  top: 16px; /* top, not bottom: after a FILL all six dice sit in the held strip */
+  transform: translateX(-50%);
+  z-index: 35;
+  width: min(440px, calc(100% - 24px));
+  padding: 14px 18px 16px;
+  text-align: center;
+  background: rgba(10, 22, 16, 0.88);
+  border: 1px solid var(--gold);
+  border-radius: 14px;
+  box-shadow: 0 16px 34px rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  animation: bannerIn 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+@keyframes bannerIn { from { opacity: 0; transform: translate(-50%, -16px); } }
+.banner-title {
+  font-family: "Rubik Mono One", "Fredoka", sans-serif;
+  font-size: 1.7rem;
+  letter-spacing: 4px;
+  color: var(--gold-light);
+  text-shadow: 0 3px 10px rgba(0,0,0,0.5);
+}
+.banner-sub { opacity: 0.85; margin: 2px 0 12px; }
+.banner-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
 .bust-stamp {
   position: absolute;
@@ -419,25 +586,30 @@ button:not(:disabled):active { transform: translateY(0); }
 
 #diceRow {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
   justify-content: center;
 }
 
 .die-slot {
-  width: 54px;
-  height: 54px;
+  border: none;
+  font: inherit;
+  flex: none;
+  --die: clamp(28px, calc((100cqi - 48px) / 6), 50px);
+  width: var(--die);
+  height: var(--die);
   background: linear-gradient(160deg, var(--cream), #e8dfc8);
   border-radius: 10px;
   box-shadow: 0 4px 10px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(0,0,0,0.08);
   padding: 6px;
   transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
+.die-slot:not(.clickable) { cursor: default; }
+.die-slot:not(.clickable):hover { transform: none; filter: none; }
 .die-slot.inactive { opacity: 0.25; }
 .die-slot.held { outline: 2px solid var(--gold); opacity: 0.55; }
 .die-slot.clickable { cursor: pointer; }
 .die-slot.clickable:hover { transform: translateY(-3px); box-shadow: 0 8px 16px rgba(0,0,0,0.45); }
-.die-slot.selected { outline: 3px solid var(--gold-light); box-shadow: 0 0 14px rgba(240,216,120,0.7); }
+.die-slot.selected { outline: 3px solid var(--gold-light); box-shadow: 0 0 14px rgba(240,216,120,0.7); transform: translateY(-4px); }
 
 .pip-grid {
   display: grid;
@@ -454,47 +626,46 @@ button:not(:disabled):active { transform: translateY(0); }
 .pip.on { background: var(--ink); }
 
 #pendingScore {
-  min-height: 22px;
+  min-height: 1.3em;
+  font-size: 0.9rem;
   font-weight: 700;
-  color: var(--danger);
+  color: #ff8a7a;
 }
 #pendingScore.valid { color: var(--gold-light); }
 
-#heldRow { opacity: 0.85; font-size: 0.9rem; min-height: 18px; }
+#heldRow { opacity: 0.75; font-size: 0.78rem; min-height: 1.1em; white-space: nowrap; }
 
-#controls, #fillPrompt {
+#controls {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
+  gap: 8px;
   align-items: center;
 }
-#fillPrompt { color: var(--gold-light); font-weight: 700; }
-
-#scorePanel {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: fit-content;
+#controls button { padding: 12px 18px; font-size: 1rem; white-space: nowrap; }
+@media (max-width: 1500px) and (min-width: 1101px) {
+  #controls button { padding: 11px 13px; font-size: 0.92rem; }
+  #actionBar { gap: 14px; }
 }
-.score-label { font-size: 0.8rem; letter-spacing: 1px; opacity: 0.7; }
-#turnScoreVal { font-size: 3.4rem; font-weight: 700; color: var(--gold-light); text-shadow: 0 3px 10px rgba(0,0,0,0.5); }
+
+.score-label { font-size: 0.7rem; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.7; }
+#turnScoreVal {
+  font-size: 2.6rem;
+  line-height: 1.05;
+  font-weight: 700;
+  color: var(--gold-light);
+  text-shadow: 0 3px 10px rgba(0,0,0,0.5);
+  font-variant-numeric: tabular-nums;
+}
+#turnScoreVal.bump { animation: scoreBump 0.45s ease; }
+@keyframes scoreBump { 40% { transform: scale(1.18); color: #fff3c4; } }
 
 /* ---------------- Cards ---------------- */
 
-.card-panel {
-  display: grid;
-  grid-template-columns: 1fr 1.3fr 1fr;
-  align-items: center;
-}
 .pile-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.pile-label { font-size: 0.75rem; letter-spacing: 1px; opacity: 0.7; }
+.pile-label { font-size: 0.7rem; letter-spacing: 1px; opacity: 0.7; text-transform: uppercase; }
 .pile {
   position: relative;
-  width: 78px;
-  height: 108px;
+  width: var(--pile-w);
+  height: var(--pile-h);
 }
 .pile-count { font-size: 0.75rem; opacity: 0.6; }
 
@@ -535,14 +706,10 @@ button:not(:disabled):active { transform: translateY(0); }
 }
 
 .active-slot { display: flex; justify-content: center; perspective: 900px; }
-.card-slide {
-  width: 128px;
-  height: 178px;
-  transform-style: preserve-3d;
-}
+.card-slide,
 .flip-card {
-  width: 128px;
-  height: 178px;
+  width: var(--card-w);
+  height: var(--card-h);
   transform-style: preserve-3d;
 }
 .flip-inner {
@@ -582,7 +749,8 @@ button:not(:disabled):active { transform: translateY(0); }
 .card-title {
   font-family: "Cinzel", serif;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: calc(var(--card-w) * 0.115);
+  line-height: 1.2;
   color: #5a2c1d;
 }
 
@@ -646,7 +814,96 @@ button:not(:disabled):active { transform: translateY(0); }
 .modal-actions { display: flex; gap: 12px; justify-content: center; }
 .modal-actions button { margin-top: 0; }
 
-@media (max-width: 980px) {
-  #mainLayout { grid-template-columns: 1fr; }
-  .card-panel { grid-template-columns: 1fr 1fr 1fr; }
+/* ---------------- Responsive game layouts ---------------- */
+
+/* Short desktop windows (laptops at 1366x768, etc.): tighten the fixed bars
+   so the table keeps as much height as possible. */
+@media (max-height: 820px) and (min-width: 721px) {
+  #gameLayout { gap: 10px; padding: 10px; }
+  #stageCol { gap: 10px; }
+  #cardTable { --card-w: 128px; --card-h: 179px; --pile-w: 58px; --pile-h: 81px; gap: 8px; }
+  #turnScoreVal { font-size: 2.2rem; }
+}
+
+/* The cheat sheet only appears where there's genuinely room for it. */
+@media (max-width: 1100px), (max-height: 640px) {
+  #rulesCard { display: none; }
+}
+
+/* Medium: one sidebar on the right holding scoreboard over card. */
+@media (max-width: 1100px) and (min-width: 721px) {
+  #gameLayout {
+    grid-template-columns: minmax(0, 1fr) 230px;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "stage score" "stage card";
+  }
+  #cardTable { --card-w: 120px; --card-h: 168px; --pile-w: 54px; --pile-h: 76px; }
+  #actionBar {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "turn select" "controls controls";
+    gap: 8px 14px;
+  }
+  #controls { justify-content: center; }
+  #controls button { flex: 1; }
+}
+
+/* Phone: everything in one column, the table flexes, the action bar sits
+   at the bottom where thumbs are. */
+@media (max-width: 720px) {
+  #statusBar { grid-template-columns: auto 1fr auto; padding: 6px 8px; gap: 8px; }
+  #statusText { font-size: 0.85rem; }
+  .status-tools select { max-width: 118px; font-size: 0.72rem; padding: 5px 4px; }
+  #mainMenuBtn { padding: 5px 9px; }
+
+  #gameLayout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas: "score" "card" "stage";
+    gap: 8px;
+    padding: 8px;
+  }
+  .panel { padding: 8px 10px; border-radius: 12px; }
+
+  /* Scoreboard becomes a horizontal strip of compact chips. */
+  #scoreboard { padding: 6px; }
+  #scoreboard .panel-title { display: none; }
+  #playerList { flex-direction: row; overflow-x: auto; gap: 6px; scrollbar-width: none; }
+  .player-card { flex: 1 0 auto; min-width: 92px; padding: 5px 8px 7px; font-size: 0.85rem; }
+
+  /* Card strip: [small card] [rule text] [draw] [discard]. */
+  #cardTable {
+    grid-template-areas: "active rule draw discard";
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    --card-w: 64px; --card-h: 90px; --pile-w: 34px; --pile-h: 48px;
+  }
+  #cardTable > .panel-title { display: none; }
+  .card-rule { text-align: left; font-size: 0.75rem; min-height: 0; justify-self: stretch; }
+  .card-face { padding: 4px; border-width: 1.5px; }
+  .card-face .card-title { font-size: calc(var(--card-w) * 0.15); }
+  .pile-label { font-size: 0.55rem; }
+
+  #stageCol { gap: 8px; }
+  #diceStage { min-height: 180px; }
+  #actionBar {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "turn select" "controls controls";
+    gap: 6px 10px;
+    padding: 8px 10px;
+  }
+  #scorePanel { min-width: 74px; }
+  #turnScoreVal { font-size: 1.7rem; }
+  #heldRow { display: none; }
+  .die-slot { --die: clamp(26px, calc((100cqi - 30px) / 6), 42px); padding: 4px; border-radius: 8px; }
+  #diceRow { gap: 5px; }
+  #controls button { flex: 1; padding: 12px 6px; font-size: 0.92rem; }
+  .banner-title { font-size: 1.3rem; }
+}
+
+/* Very short screens (phones in landscape): allow scrolling rather than
+   crushing the table to nothing. */
+@media (max-height: 520px) {
+  #gameScreen { height: auto; min-height: 100dvh; overflow: visible; }
+  #diceStage { min-height: 300px; }
 }

@@ -271,10 +271,13 @@ for p in parts:
     bpy.context.view_layer.objects.active = p
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 pencil = join("Pencil", parts)
-# Lay it down flat on a hex face, angled across the right of the tray.
+# Lay it down flat on a hex face, running along the scorepad (well clear of
+# the tray's right wall at x = 9.6 -- it now spans roughly x 12.4..16.7).
 pencil.rotation_euler = Euler((math.radians(90), 0, 0), "XYZ")
-pencil.rotation_euler.rotate(Euler((0, 0, math.radians(-62))))
-pencil.location = g(14.4, TABLE_Y + 0.35 + R * 0.87, 1.2)
+pencil.rotation_euler.rotate(Euler((0, 0, math.radians(-18))))
+# Resting height: the hex shaft lies on a corner (radius R) and the ferrule
+# is slightly wider (R * 1.04), so that's what touches the pad.
+pencil.location = g(14.6, TABLE_Y + 0.35 + R * 1.04, 0.8)
 for poly in pencil.data.polygons:
     poly.use_smooth = False
 
@@ -356,17 +359,105 @@ place_lid(sugar_lid, sugar, 15)
 bowl = place(import_gltf("wooden_bowl_01")["wooden_bowl_01"], -19.0, -15.5, RUNNER_Y, decimate=3000)
 apple_src = import_gltf("food_apple_01")["food_apple_01"]
 apple2_src = apple_src.copy(); apple2_src.data = apple_src.data.copy(); export_col.objects.link(apple2_src)
-apple3_src = apple_src.copy(); apple3_src.data = apple_src.data.copy(); export_col.objects.link(apple3_src)
 apple1 = place(apple_src, -21.3, -16.5, RUNNER_Y + 1.1, rot_deg=20, decimate=1400,
                extra_rot=Euler((math.radians(12), 0, 0)))
 apple2 = place(apple2_src, -16.6, -15.0, RUNNER_Y + 1.1, rot_deg=140, decimate=1400,
                extra_rot=Euler((0, math.radians(-15), 0)))
 lemon = place(import_gltf("lemon")["lemon"], -19.2, -12.2, RUNNER_Y + 1.6, rot_deg=70, decimate=900,
               extra_rot=Euler((math.radians(90), 0, 0)))
-# One stray apple on the bare table, left of the tray.
-apple3 = place(apple3_src, -15.5, -1.0, TABLE_Y, rot_deg=-50, decimate=1400)
-for o in (apple1, apple2, apple3):
+for o in (apple1, apple2):
     o.name = o.name.replace("food_", "")
+
+
+# ------------------------------------------------------------- card box ---
+# The game's own deck: a tuck box lying face-up left of the tray, flap
+# unfolded flat, the deck sliding out the open end and one card fallen onto
+# the table. Printed surfaces (logo, striped sides, card backs) are drawn by
+# the game at runtime with its own web fonts, keyed by material name; every
+# face here just gets a clean 0..1 UV square for that.
+box_front = flat_mat("CardBoxFront", srgb("0f5132"), rough=0.55)
+box_side = flat_mat("CardBoxSide", srgb("7a1f2b"), rough=0.55)
+box_inside = flat_mat("CardBoxInside", srgb("d9ccb0"), rough=0.9)
+card_back = flat_mat("CardBack", srgb("7a1f2b"), rough=0.5)
+card_edge = flat_mat("CardEdge", srgb("efe6d2"), rough=0.8)
+
+# Front-left corner, just off the tray: the one spot that's in frame on both
+# wide desktop windows and tall phone screens. Lying sideways (open end to
+# the left), so its logo is printed rotated to read upright from the player.
+BOX_X, BOX_Z, BOX_YAW = -7.0, 10.6, math.radians(90)
+
+
+def box_xf(local, yaw_extra=0.0, pivot=(0.0, 0.0)):
+    """Card-box local (game axes, y up, origin on the table) -> Blender."""
+    x, y, z = local
+    if yaw_extra:
+        px, pz = pivot
+        dx, dz = x - px, z - pz
+        c, s = math.cos(yaw_extra), math.sin(yaw_extra)
+        x, z = px + dx * c + dz * s, pz - dx * s + dz * c
+    c, s = math.cos(BOX_YAW), math.sin(BOX_YAW)
+    wx, wz = x * c + z * s, -x * s + z * c
+    return g(BOX_X + wx, TABLE_Y + y, BOX_Z + wz)
+
+
+FACES = {  # corner order gives outward normals and (0,0)(1,0)(1,1)(0,1) UVs
+    "+y": lambda h: [(-h[0], h[1], h[2]), (h[0], h[1], h[2]), (h[0], h[1], -h[2]), (-h[0], h[1], -h[2])],
+    "-y": lambda h: [(-h[0], -h[1], -h[2]), (h[0], -h[1], -h[2]), (h[0], -h[1], h[2]), (-h[0], -h[1], h[2])],
+    "+x": lambda h: [(h[0], -h[1], h[2]), (h[0], -h[1], -h[2]), (h[0], h[1], -h[2]), (h[0], h[1], h[2])],
+    "-x": lambda h: [(-h[0], -h[1], -h[2]), (-h[0], -h[1], h[2]), (-h[0], h[1], h[2]), (-h[0], h[1], -h[2])],
+    "+z": lambda h: [(-h[0], -h[1], h[2]), (h[0], -h[1], h[2]), (h[0], h[1], h[2]), (-h[0], h[1], h[2])],
+    "-z": lambda h: [(h[0], -h[1], -h[2]), (-h[0], -h[1], -h[2]), (-h[0], h[1], -h[2]), (h[0], h[1], -h[2])],
+}
+
+
+def card_part(name, size, center, face_mats, mats, drop=("-y",), yaw_extra=0.0):
+    h = (size[0] / 2, size[1] / 2, size[2] / 2)
+    cx, cy, cz = center
+    bm = bmesh.new()
+    uvl = bm.loops.layers.uv.new("UVMap")
+    for key, corners in FACES.items():
+        if key in drop:
+            continue
+        vs = [bm.verts.new(box_xf((cx + x, cy + y, cz + z), yaw_extra, (cx, cz))) for x, y, z in corners(h)]
+        f = bm.faces.new(vs)
+        f.material_index = face_mats.get(key, face_mats.get("*", 0))
+        for loop, uv in zip(f.loops, [(0, 0), (1, 0), (1, 1), (0, 1)]):
+            loop[uvl].uv = uv
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    for m in mats:
+        me.materials.append(m)
+    ob = bpy.data.objects.new(name, me)
+    export_col.objects.link(ob)
+    return ob
+
+
+BW, BH, BL = 4.2, 1.45, 5.9   # box: width (x), height (y), length (z); open end at -z
+box_body = card_part("CardBox", (BW, BH, BL), (0, BH / 2, 0),
+                     {"+y": 0, "*": 1}, [box_front, box_side, box_inside, box_inside],
+                     drop=("-y", "-z"))
+sol = box_body.modifiers.new("Wall", "SOLIDIFY")
+sol.thickness = 0.05
+sol.offset = -1
+sol.use_rim = True
+sol.material_offset = 2
+sol.material_offset_rim = 2
+apply_mods(box_body)
+# Flap, unfolded flat on the table off the open end (inner side up).
+card_part("CardBoxFlap", (BW - 0.1, 0.03, BH + 0.5), (0, 0.015, -BL / 2 - (BH + 0.5) / 2),
+          {"*": 0}, [box_inside])
+# The deck, slid two units out of the box.
+STACK_Y0, STACK_H = 0.07, 1.28
+card_part("CardStack", (3.9, STACK_H, 5.5), (0, STACK_Y0 + STACK_H / 2, -2.2),
+          {"+y": 0, "*": 1}, [card_back, card_edge])
+top = STACK_Y0 + STACK_H
+card_part("CardLoose", (3.9, 0.025, 5.5), (0.15, top + 0.014, -3.3),
+          {"+y": 0, "*": 1}, [card_back, card_edge], yaw_extra=math.radians(5))
+# One card escaped onto the table (just above the 0.03-thick flap).
+card_part("CardFallen", (3.9, 0.025, 5.5), (1.3, 0.035 + 0.0125, -7.6),
+          {"+y": 0, "*": 1}, [card_back, card_edge], yaw_extra=math.radians(22))
 
 # Pendant lamp: bake-only (above the camera), its shade shapes the light pool.
 lamp = import_gltf("hanging_industrial_lamp")["hanging_industrial_lamp"]

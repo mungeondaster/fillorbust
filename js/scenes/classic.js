@@ -2,7 +2,7 @@
 // rail. Fully procedural (nothing to download), so it's also the instant
 // fallback while another scene loads, and the lightest option for old phones.
 import * as THREE from "../vendor/three.module.min.js";
-import { feltTexture } from "./common.js?v=24";
+import { feltTexture } from "./common.js?v=32";
 
 export default {
   id: "classic",

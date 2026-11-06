@@ -11,10 +11,10 @@
 // Physics is a recorded cannon-es pre-simulation (see physics.js); this file
 // plays it back, plus sound. Scenery comes from js/scenes/*.
 import * as THREE from "./vendor/three.module.min.js";
-import { simulateRoll, PHYS, FACE_NORMALS } from "./physics.js?v=24";
-import { playImpact } from "./sound.js?v=24";
-import { SCENES, getSceneId, saveSceneId } from "./scenes/index.js?v=24";
-import { pipTextures, roundedBoxGeometry } from "./scenes/common.js?v=24";
+import { simulateRoll, PHYS, FACE_NORMALS } from "./physics.js?v=32";
+import { playImpact } from "./sound.js?v=32";
+import { SCENES, getSceneId, saveSceneId } from "./scenes/index.js?v=32";
+import { pipTextures, roundedBoxGeometry } from "./scenes/common.js?v=32";
 
 const HALF = 0.5;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -120,6 +120,43 @@ export class Dice3D {
     this.shadowCatcher.visible = false;
     this.scene.add(this.shadowCatcher);
 
+    // Gold ring on the felt under each selected die (mirrors the 2D row).
+    const ringGeo = new THREE.RingGeometry(0.74, 0.9, 40);
+    ringGeo.rotateX(-Math.PI / 2);
+    this.rings = this.dice.map(() => {
+      const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({
+        color: 0xf0d878, transparent: true, opacity: 0.9, depthWrite: false, fog: false, toneMapped: false,
+      }));
+      ring.visible = false;
+      ring.renderOrder = 2;
+      this.scene.add(ring);
+      return ring;
+    });
+
+    // Click/tap a die on the table to (de)select it. main.js decides what's
+    // clickable (isDieClickable) and what a click does (onDieClick).
+    this.isDieClickable = () => false;
+    this.onDieClick = null;
+    this._raycaster = new THREE.Raycaster();
+    const canvas = this.renderer.domElement;
+    const pick = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      this._raycaster.setFromCamera(ndc, this.camera);
+      const hit = this._raycaster.intersectObjects(this.dice.map((d) => d.mesh), false)[0];
+      if (!hit) return -1;
+      const i = this.dice.findIndex((d) => d.mesh === hit.object);
+      return this.isDieClickable(i) ? i : -1;
+    };
+    canvas.addEventListener("click", (e) => {
+      const i = pick(e);
+      if (i >= 0) this.onDieClick?.(i);
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "mouse") return;
+      canvas.style.cursor = pick(e) >= 0 ? "pointer" : "";
+    });
+
     this._ro = new ResizeObserver(() => this.resize());
     this._ro.observe(container);
     window.addEventListener("resize", () => this.resize());
@@ -212,35 +249,51 @@ export class Dice3D {
   // Keep a fixed viewing angle and back the camera off just far enough that
   // the whole tray fits -- on a tall phone that means more table shows
   // above/below; on a wide monitor, more on the sides.
+  //
+  // A scene can also name a "nice to have" area (camera.extra: a prop it
+  // would like in frame, e.g. the kitchen's card box). It's included only
+  // when that costs the tray almost nothing -- i.e. when the screen shape
+  // leaves spare room anyway -- and dropped otherwise.
   _fitCamera() {
-    const { pitchDeg, margin } = this.cameraCfg;
+    const { pitchDeg, margin, extra } = this.cameraCfg;
     const pitch = THREE.MathUtils.degToRad(pitchDeg);
-    const target = FRAME_BOX.getCenter(new THREE.Vector3());
     const dir = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch));
-    const corners = [];
-    for (const x of [FRAME_BOX.min.x, FRAME_BOX.max.x])
-      for (const y of [FRAME_BOX.min.y, FRAME_BOX.max.y])
-        for (const z of [FRAME_BOX.min.z, FRAME_BOX.max.z]) corners.push(new THREE.Vector3(x, y, z));
-    const fits = (dist) => {
+    const place = (target, dist) => {
       this.camera.position.copy(target).addScaledVector(dir, dist);
       this.camera.lookAt(target);
       this.camera.updateMatrixWorld();
       this.camera.updateProjectionMatrix();
-      const lim = 1 / margin;
-      return corners.every((c) => {
-        const p = c.clone().project(this.camera);
-        return Math.abs(p.x) <= lim && Math.abs(p.y) <= lim;
-      });
     };
-    let lo = 5, hi = 200;
-    for (let i = 0; i < 30; i++) {
-      const mid = (lo + hi) / 2;
-      if (fits(mid)) hi = mid; else lo = mid;
+    const solve = (box) => {
+      const target = box.getCenter(new THREE.Vector3());
+      const corners = [];
+      for (const x of [box.min.x, box.max.x])
+        for (const y of [box.min.y, box.max.y])
+          for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
+      const lim = 1 / margin;
+      const fits = (dist) => {
+        place(target, dist);
+        return corners.every((c) => {
+          const p = c.clone().project(this.camera);
+          return Math.abs(p.x) <= lim && Math.abs(p.y) <= lim;
+        });
+      };
+      let lo = 5, hi = 200;
+      for (let i = 0; i < 30; i++) {
+        const mid = (lo + hi) / 2;
+        if (fits(mid)) hi = mid; else lo = mid;
+      }
+      return { target, dist: hi };
+    };
+    let best = solve(FRAME_BOX);
+    if (extra) {
+      const withExtra = solve(FRAME_BOX.clone().union(extra));
+      if (withExtra.dist <= best.dist * 1.08) best = withExtra;
     }
-    fits(hi);
+    place(best.target, best.dist);
     if (this._fogCfg && this.scene.fog) {
-      this.scene.fog.near = hi * this._fogCfg.near;
-      this.scene.fog.far = hi * this._fogCfg.far;
+      this.scene.fog.near = best.dist * this._fogCfg.near;
+      this.scene.fog.far = best.dist * this._fogCfg.far;
     }
   }
 
@@ -251,6 +304,16 @@ export class Dice3D {
     this.renderer.setSize(w, h);
     this._fitCamera();
     this._renderFrames = Math.max(this._renderFrames, 2);
+    this._kick();
+  }
+
+  setSelected(indices) {
+    this.rings.forEach((ring, i) => {
+      const on = indices.includes(i) && this.dice[i].state === "table";
+      ring.visible = on;
+      if (on) ring.position.set(this.dice[i].mesh.position.x, 0.012, this.dice[i].mesh.position.z);
+    });
+    this._renderFrames = Math.max(this._renderFrames, 1);
     this._kick();
   }
 
@@ -301,6 +364,7 @@ export class Dice3D {
   // the same kind of fully-simulated throw is shown, relabeled so the
   // authoritative values come up.
   async rollIndices(indices, forcedValues) {
+    for (const ring of this.rings) ring.visible = false;
     const sim = simulateRoll(indices.length);
     const f0 = sim.frames[0];
     const S = sim.stride;

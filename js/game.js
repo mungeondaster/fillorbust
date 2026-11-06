@@ -1,9 +1,9 @@
-import { Dice3D } from "./dice3d.js?v=24";
-import { CardTable } from "./cardsUI.js?v=24";
-import { Deck } from "./deck.js?v=24";
-import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=24";
-import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=24";
-import { NullNet } from "./net.js?v=24";
+import { Dice3D } from "./dice3d.js?v=32";
+import { CardTable } from "./cardsUI.js?v=32";
+import { Deck } from "./deck.js?v=32";
+import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=32";
+import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=32";
+import { NullNet } from "./net.js?v=32";
 
 const BONUS_VALUE = { BONUS_300: 300, BONUS_400: 400, BONUS_500: 500 };
 

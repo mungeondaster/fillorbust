@@ -6,7 +6,7 @@
 <title>Fill or Bust</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Cinzel:wght@600;700&family=Rubik+Mono+One&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=24">
+<link rel="stylesheet" href="css/style.css?v=32">
 </head>
 <body>
 
@@ -106,14 +106,54 @@
     </div>
   </div>
 
-  <div id="mainLayout">
-    <aside id="playerList" class="panel"></aside>
+  <!--
+    Layout: the 3D table is the hero and takes all leftover space; the
+    screen never scrolls. Scoreboard on the left, the card in play (with its
+    rule spelled out) on the right, and everything you act on -- turn score,
+    dice to pick, Roll/Hold/Bank -- in one bar directly under the table.
+    Grid areas rearrange for tablets and phones (see css "Game screen").
+  -->
+  <div id="gameLayout">
+    <div id="leftCol">
+      <aside id="scoreboard" class="panel">
+        <div class="panel-title">
+          <span>Scoreboard</span>
+          <span id="targetLabel" class="panel-sub"></span>
+        </div>
+        <div id="playerList"></div>
+      </aside>
 
-    <div id="tableArea">
-      <div id="cardTable" class="panel card-panel"></div>
+      <!-- Quick reference for new players; wide screens only. -->
+      <aside id="rulesCard" class="panel">
+        <div class="panel-title"><span>Scoring</span></div>
+        <dl class="score-ref">
+          <dt><span class="mini-dice" data-v="1"></span></dt><dd>100</dd>
+          <dt><span class="mini-dice" data-v="5"></span></dt><dd>50</dd>
+          <dt><span class="mini-dice" data-v="111"></span></dt><dd>1,000</dd>
+          <dt><span class="mini-dice" data-v="333"></span> <small>three of a kind</small></dt><dd>face × 100</dd>
+          <dt><span class="mini-dice" data-v="123456"></span></dt><dd>1,500</dd>
+        </dl>
+        <ul class="rule-notes">
+          <li>Only <b>exactly three</b> 2s, 3s, 4s or 6s score; a fourth doesn't.</li>
+          <li><b>FILL</b>: all six dice score. Draw a new card and keep going, or bank.</li>
+          <li><b>BUST</b>: a roll with nothing scoring loses the turn's points.</li>
+        </ul>
+      </aside>
+    </div>
 
+    <aside id="cardTable" class="panel card-panel"></aside>
+
+    <main id="stageCol">
       <div id="diceStage">
         <div id="diceCanvas"></div>
+        <div id="fillPrompt" class="stage-banner hidden">
+          <div class="banner-title">FILL!</div>
+          <div class="banner-sub">All six dice scored. Push your luck?</div>
+          <div class="banner-actions">
+            <button id="continueFillBtn" class="primary-btn">Draw &amp; Roll Again</button>
+            <button id="bankFillBtn" class="bank-btn">Bank Now</button>
+          </div>
+        </div>
         <div id="bustStamp" class="bust-stamp hidden">BUST</div>
         <div id="noDiceStamp" class="no-dice-stamp hidden">
           <div class="no-dice-die">
@@ -128,35 +168,32 @@
         </div>
       </div>
 
-      <div id="diceRow">
-        <div class="die-slot inactive" data-i="0"><div class="pip-grid"></div></div>
-        <div class="die-slot inactive" data-i="1"><div class="pip-grid"></div></div>
-        <div class="die-slot inactive" data-i="2"><div class="pip-grid"></div></div>
-        <div class="die-slot inactive" data-i="3"><div class="pip-grid"></div></div>
-        <div class="die-slot inactive" data-i="4"><div class="pip-grid"></div></div>
-        <div class="die-slot inactive" data-i="5"><div class="pip-grid"></div></div>
+      <div id="actionBar" class="panel">
+        <div id="scorePanel">
+          <div class="score-label">Turn Score</div>
+          <div id="turnScoreVal">0</div>
+          <div id="heldRow"></div>
+        </div>
+
+        <div id="selectArea">
+          <div id="pendingScore">&nbsp;</div>
+          <div id="diceRow">
+            <button class="die-slot inactive" data-i="0" type="button" aria-label="Die 1"><div class="pip-grid"></div></button>
+            <button class="die-slot inactive" data-i="1" type="button" aria-label="Die 2"><div class="pip-grid"></div></button>
+            <button class="die-slot inactive" data-i="2" type="button" aria-label="Die 3"><div class="pip-grid"></div></button>
+            <button class="die-slot inactive" data-i="3" type="button" aria-label="Die 4"><div class="pip-grid"></div></button>
+            <button class="die-slot inactive" data-i="4" type="button" aria-label="Die 5"><div class="pip-grid"></div></button>
+            <button class="die-slot inactive" data-i="5" type="button" aria-label="Die 6"><div class="pip-grid"></div></button>
+          </div>
+        </div>
+
+        <div id="controls">
+          <button id="rollBtn" class="primary-btn" disabled>Roll Dice</button>
+          <button id="confirmHoldBtn" class="secondary-btn" disabled>Hold Selected</button>
+          <button id="bankBtn" class="bank-btn" disabled>Bank Points</button>
+        </div>
       </div>
-
-      <div id="pendingScore"></div>
-      <div id="heldRow"></div>
-
-      <div id="controls">
-        <button id="rollBtn" class="primary-btn" disabled>Roll Dice</button>
-        <button id="confirmHoldBtn" class="secondary-btn" disabled>Hold Selected</button>
-        <button id="bankBtn" class="bank-btn" disabled>Bank Points</button>
-      </div>
-
-      <div id="fillPrompt" class="hidden">
-        <span>FILL! All six dice scored.</span>
-        <button id="continueFillBtn" class="primary-btn">Draw &amp; Roll Again</button>
-        <button id="bankFillBtn" class="bank-btn">Bank Now</button>
-      </div>
-    </div>
-
-    <div id="scorePanel" class="panel">
-      <div class="score-label">Turn Score</div>
-      <div id="turnScoreVal">0</div>
-    </div>
+    </main>
   </div>
 </div>
 
@@ -181,6 +218,6 @@
 <script type="importmap">
 { "imports": { "three": "./js/vendor/three.module.min.js" } }
 </script>
-<script type="module" src="js/main.js?v=24"></script>
+<script type="module" src="js/main.js?v=32"></script>
 </body>
 </html>
