@@ -6,7 +6,7 @@
 <title>Fill or Bust</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Cinzel:wght@600;700&family=Rubik+Mono+One&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20">
+<link rel="stylesheet" href="css/style.css?v=24">
 </head>
 <body>
 
@@ -100,6 +100,10 @@
   <div id="statusBar">
     <button id="mainMenuBtn" class="secondary-btn small" title="Return to Main Menu">Main Menu</button>
     <span id="statusText">Ready</span>
+    <div class="status-tools">
+      <select id="sceneSel" title="Table scene" aria-label="Table scene"></select>
+      <button id="muteBtn" class="secondary-btn small icon-btn" type="button" aria-label="Toggle sound">🔊</button>
+    </div>
   </div>
 
   <div id="mainLayout">
@@ -174,6 +178,9 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=20"></script>
+<script type="importmap">
+{ "imports": { "three": "./js/vendor/three.module.min.js" } }
+</script>
+<script type="module" src="js/main.js?v=24"></script>
 </body>
 </html>

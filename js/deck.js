@@ -1,4 +1,4 @@
-import { buildDeck } from "./constants.js?v=20";
+import { buildDeck } from "./constants.js?v=24";
 
 export class Deck {
   constructor() {

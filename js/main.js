@@ -1,4 +1,7 @@
-import { Game } from "./game.js?v=20";
+import { Game } from "./game.js?v=24";
+import { Dice3D } from "./dice3d.js?v=24";
+import { getSceneId } from "./scenes/index.js?v=24";
+import { unlockAudio, isMuted, setMuted } from "./sound.js?v=24";
 import { MULTIPLAYER_ENABLED } from "./firebaseConfig.js";
 
 const setupScreen = document.getElementById("setupScreen");
@@ -126,7 +129,7 @@ function setupOnlineMode() {
     const name = createNameInput.value.trim() || "Host";
     createRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=20");
+      const { NetSession } = await import("./net.js?v=24");
       const net = new NetSession();
       const { playerId } = await net.createRoom(name);
       enterLobby(net, playerId);
@@ -147,7 +150,7 @@ function setupOnlineMode() {
     }
     joinRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=20");
+      const { NetSession } = await import("./net.js?v=24");
       const net = new NetSession();
       const { playerId } = await net.joinRoom(code, name);
       enterLobby(net, playerId);
@@ -463,6 +466,33 @@ function launchGame(players, targetScore, netInfo) {
     }
   });
 
+  // Table scene picker + sound toggle (both per-device, cosmetic only).
+  const sceneSel = document.getElementById("sceneSel");
+  sceneSel.innerHTML = "";
+  for (const s of Dice3D.scenes) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.name;
+    sceneSel.appendChild(opt);
+  }
+  sceneSel.value = getSceneId();
+  sceneSel.addEventListener("change", () => game.dice3d.setScene(sceneSel.value));
+
+  const muteBtn = document.getElementById("muteBtn");
+  const syncMute = () => {
+    muteBtn.textContent = isMuted() ? "🔇" : "🔊";
+    muteBtn.title = isMuted() ? "Sound off" : "Sound on";
+  };
+  syncMute();
+  muteBtn.addEventListener("click", () => {
+    setMuted(!isMuted());
+    syncMute();
+  });
+
   // debug handle for inspecting game/dice state from the console
   window.__game = game;
 }
+
+// Browsers keep audio locked until the first tap/click; any one will do.
+document.addEventListener("pointerdown", unlockAudio, { passive: true });
+document.addEventListener("keydown", unlockAudio);

@@ -238,6 +238,27 @@ button:not(:disabled):active { transform: translateY(0); }
   top: 50%;
   transform: translateY(-50%);
 }
+.status-tools {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.status-tools select {
+  padding: 5px 8px;
+  font-size: 0.8rem;
+  width: auto;
+}
+.icon-btn { padding: 5px 9px; line-height: 1; }
+@media (max-width: 600px) {
+  /* Stack the status bar so the buttons never cover the turn text. */
+  #statusBar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+  #mainMenuBtn, .status-tools { position: static; transform: none; }
+  #statusText { order: 3; width: 100%; }
+}
 
 #mainLayout {
   display: grid;
