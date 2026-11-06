@@ -1,7 +1,10 @@
-import { Game } from "./game.js?v=32";
-import { Dice3D } from "./dice3d.js?v=32";
-import { getSceneId } from "./scenes/index.js?v=32";
-import { unlockAudio, isMuted, setMuted } from "./sound.js?v=32";
+import { Game } from "./game.js?v=33";
+import { Dice3D } from "./dice3d.js?v=33";
+import { getSceneId } from "./scenes/index.js?v=33";
+import { unlockAudio, isMuted, setMuted, preloadSounds, sfx } from "./sound.js?v=33";
+
+// Start downloading the table sounds while players are still on the menu.
+preloadSounds();
 import { MULTIPLAYER_ENABLED } from "./firebaseConfig.js";
 
 const setupScreen = document.getElementById("setupScreen");
@@ -129,7 +132,7 @@ function setupOnlineMode() {
     const name = createNameInput.value.trim() || "Host";
     createRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=32");
+      const { NetSession } = await import("./net.js?v=33");
       const net = new NetSession();
       const { playerId } = await net.createRoom(name);
       enterLobby(net, playerId);
@@ -150,7 +153,7 @@ function setupOnlineMode() {
     }
     joinRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=32");
+      const { NetSession } = await import("./net.js?v=33");
       const net = new NetSession();
       const { playerId } = await net.joinRoom(code, name);
       enterLobby(net, playerId);
@@ -355,6 +358,7 @@ function launchGame(players, targetScore, netInfo) {
         slot.classList.toggle("selected", indices.includes(i));
       });
       game?.dice3d.setSelected(indices);
+      if (isMyTurn()) sfx("chipLay", { vol: 0.35 });
     },
     setPendingScore(result) {
       if (!result.valid || result.score === 0) {

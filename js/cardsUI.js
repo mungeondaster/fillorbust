@@ -1,3 +1,5 @@
+import { sfx } from "./sound.js?v=33";
+
 // Renders the draw pile / discard pile / active card as authentic-looking
 // physical playing cards: slightly uneven stacking, soft shadows, a flip
 // animation on draw.
@@ -103,6 +105,7 @@ export class CardTable {
       // Slide the card that was showing off toward the discard pile before
       // bringing in the new one.
       const { dx, dy } = this._offsetBetween(this.discardStack, this.cardSlide);
+      sfx("cardShove", { vol: 0.6 });
       this.cardSlide.style.transition = "transform 0.45s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.4s ease-in";
       this.cardSlide.style.transform = `translate(${dx}px, ${dy}px) scale(0.8) rotate(-8deg)`;
       this.cardSlide.style.opacity = "0";
@@ -130,6 +133,7 @@ export class CardTable {
     this.flipInner.style.transition = ""; // restore for the real reveal flip later
 
     // Slide it from the draw pile out to the center.
+    sfx("cardSlide", { vol: 0.75 });
     this.cardSlide.style.transition = "transform 0.4s cubic-bezier(0.2, 0.7, 0.3, 1)";
     this.cardSlide.style.transform = "translate(0, 0) scale(1) rotate(0deg)";
     await wait(400);
@@ -139,6 +143,7 @@ export class CardTable {
     this.cardFront.dataset.type = card.id;
     await wait(80);
     this.flipCard.classList.add("flipped");
+    setTimeout(() => sfx("cardPlace", { vol: 0.8 }), 220); // lands as the flip finishes
     await wait(300);
     this.cardRule.textContent = card.desc;
     this.cardRule.classList.remove("fading");
@@ -151,6 +156,7 @@ export class CardTable {
   // reshuffle rather than the counts just silently jumping.
   async playShuffleAnimation() {
     this.flipCard.classList.remove("flipped");
+    sfx("shuffle", { vol: 0.8, rate: 1.15 });
     this.drawStack.classList.add("shuffling");
     this.discardStack.classList.add("shuffling");
     await wait(650);

@@ -1,9 +1,10 @@
-import { Dice3D } from "./dice3d.js?v=32";
-import { CardTable } from "./cardsUI.js?v=32";
-import { Deck } from "./deck.js?v=32";
-import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=32";
-import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=32";
-import { NullNet } from "./net.js?v=32";
+import { Dice3D } from "./dice3d.js?v=33";
+import { CardTable } from "./cardsUI.js?v=33";
+import { Deck } from "./deck.js?v=33";
+import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=33";
+import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=33";
+import { NullNet } from "./net.js?v=33";
+import { sfx, playBank, playBust } from "./sound.js?v=33";
 
 const BONUS_VALUE = { BONUS_300: 300, BONUS_400: 400, BONUS_500: 500 };
 
@@ -363,6 +364,7 @@ export class Game {
   // choice to make (Must Bust / Double Trouble mid-sequence).
   async handleFill() {
     this.hasFilledThisTurn = true;
+    sfx("chipsHandle", { vol: 0.9 });
 
     // Credit a BONUS card's points as soon as the FILL that earns them
     // happens, not just at bank time -- so the Turn Score display reflects
@@ -466,6 +468,7 @@ export class Game {
   async handleBust() {
     this.ui.setStatus(`${this.currentPlayer.name} BUSTED! Lost ${this.turnScore} points.`);
     this.turnScore = 0;
+    playBust();
     await this.ui.showBustStamp();
     this.endTurn({ busted: true });
   }
@@ -475,6 +478,7 @@ export class Game {
   // paid out instead of lost.
   handleMustBustPayout() {
     const score = this.turnScore;
+    playBank(score);
     this.currentPlayer.score += score;
     this.turnScore = 0;
     this.ui.setStatus(`${this.currentPlayer.name} busts, but Must Bust protects the ${score} points earned!`);
@@ -494,6 +498,7 @@ export class Game {
 
   bank() {
     // Any BONUS card was already credited into turnScore at FILL time.
+    playBank(this.turnScore);
     this.currentPlayer.score += this.turnScore;
     this.turnScore = 0;
     this.ui.renderPlayers(this.players, this.currentPlayerIndex);

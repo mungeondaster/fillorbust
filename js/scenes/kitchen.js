@@ -8,7 +8,7 @@
 import * as THREE from "../vendor/three.module.min.js";
 import { GLTFLoader } from "../vendor/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "../vendor/addons/environments/RoomEnvironment.js";
-import { feltTexture } from "./common.js?v=32";
+import { feltTexture } from "./common.js?v=33";
 
 const BASE = "assets/scenes/kitchen/";
 const FOG = 0x140d08;
@@ -181,10 +181,10 @@ export default {
   async build({ root, renderer, quality }) {
     const texLoader = new THREE.TextureLoader();
     const [gltf, info, lmTable, lmTray] = await Promise.all([
-      new GLTFLoader().loadAsync(BASE + "kitchen.glb?v=32"),
-      fetch(BASE + "scene.json?v=32").then((r) => r.json()),
-      loadTex(texLoader, BASE + "lm_table.jpg?v=32"),
-      loadTex(texLoader, BASE + "lm_tray.jpg?v=32"),
+      new GLTFLoader().loadAsync(BASE + "kitchen.glb?v=33"),
+      fetch(BASE + "scene.json?v=33").then((r) => r.json()),
+      loadTex(texLoader, BASE + "lm_table.jpg?v=33"),
+      loadTex(texLoader, BASE + "lm_tray.jpg?v=33"),
     ]);
     const lightmaps = { lm_table: lmTable, lm_tray: lmTray };
     for (const t of Object.values(lightmaps)) {
@@ -298,7 +298,8 @@ export default {
         onePip: "#a8231b",
         roughness: 0.28,
       },
-      sound: { floor: 1, wall: 1, die: 1 },
+      // Felt-lined walnut tray: muffled landings, lively wooden walls.
+      sound: { floor: 1, wall: 1.1, die: 0.9, feltCutoff: 2400 },
     };
   },
 };

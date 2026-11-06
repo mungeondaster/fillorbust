@@ -11,10 +11,10 @@
 // Physics is a recorded cannon-es pre-simulation (see physics.js); this file
 // plays it back, plus sound. Scenery comes from js/scenes/*.
 import * as THREE from "./vendor/three.module.min.js";
-import { simulateRoll, PHYS, FACE_NORMALS } from "./physics.js?v=32";
-import { playImpact } from "./sound.js?v=32";
-import { SCENES, getSceneId, saveSceneId } from "./scenes/index.js?v=32";
-import { pipTextures, roundedBoxGeometry } from "./scenes/common.js?v=32";
+import { simulateRoll, PHYS, FACE_NORMALS } from "./physics.js?v=33";
+import { playImpact, sfx } from "./sound.js?v=33";
+import { SCENES, getSceneId, saveSceneId } from "./scenes/index.js?v=33";
+import { pipTextures, roundedBoxGeometry } from "./scenes/common.js?v=33";
 
 const HALF = 0.5;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -331,6 +331,7 @@ export class Dice3D {
 
   holdDice(indices) {
     for (const i of indices) this.dice[i].state = "tray";
+    sfx("grab", { vol: 0.35, rate: 1.1 });
     let k = 0;
     for (const die of this.dice) {
       if (die.state !== "tray") continue;
@@ -379,6 +380,7 @@ export class Dice3D {
     });
 
     // Scoop the dice into the throwing hand (the sim's start pose).
+    sfx("grab", { vol: 0.75 });
     await Promise.all(plan.map(({ i, k, R }) => {
       const die = this.dice[i];
       die.snap = null;
