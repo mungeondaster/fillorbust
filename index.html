@@ -6,7 +6,7 @@
 <title>Fill or Bust</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Cinzel:wght@600;700&family=Rubik+Mono+One&family=Anton&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=45">
+<link rel="stylesheet" href="css/style.css?v=55">
 </head>
 <body>
 
@@ -115,7 +115,6 @@
     <span id="statusText">Ready</span>
     <div class="status-tools">
       <span id="netBadge" class="net-badge hidden" role="status">Reconnecting…</span>
-      <select id="sceneSel" title="Table scene" aria-label="Table scene"></select>
       <button id="muteBtn" class="secondary-btn small icon-btn" type="button" aria-label="Toggle sound">🔊</button>
     </div>
   </div>
@@ -217,10 +216,16 @@
   </div>
 </div>
 
-<div id="gameOverModal" class="modal hidden">
-  <div class="modal-card">
-    <div id="gameOverText"></div>
-    <button id="playAgainBtn" class="primary-btn">Play Again</button>
+<div id="gameOverModal" class="modal win-modal hidden">
+  <div class="win-card">
+    <h1 class="title-logo win-logo">
+      <span class="logo-fan" id="winLogoFan" aria-hidden="true"></span>
+      <span class="logo-wrap" id="winLogoArt"></span>
+    </h1>
+    <div class="modal-card win-body">
+      <div id="gameOverText"></div>
+      <button id="playAgainBtn" class="primary-btn big">Play Again</button>
+    </div>
   </div>
 </div>
 
@@ -249,6 +254,6 @@
 <script type="importmap">
 { "imports": { "three": "./js/vendor/three.module.min.js" } }
 </script>
-<script type="module" src="js/main.js?v=45"></script>
+<script type="module" src="js/main.js?v=55"></script>
 </body>
 </html>

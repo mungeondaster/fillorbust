@@ -1,20 +1,36 @@
-import { Game } from "./game.js?v=45";
-import { Dice3D } from "./dice3d.js?v=45";
-import { getSceneId } from "./scenes/index.js?v=45";
-import { unlockAudio, preloadSounds, sfx } from "./sound.js?v=45";
-import { attachSoundButton } from "./soundPanel.js?v=45";
-import { titleLogoSVG, cardFaceSVG } from "./cardArt.js?v=45";
-import { startFallingCards } from "./fallingCards.js?v=45";
-import { getSavedSession, clearSavedSession } from "./movelog.js?v=45";
+import { Game } from "./game.js?v=55";
+import { Dice3D } from "./dice3d.js?v=55";
+import { unlockAudio, preloadSounds, sfx } from "./sound.js?v=55";
+import { attachSoundButton } from "./soundPanel.js?v=55";
+import { titleLogoSVG, cardFaceSVG } from "./cardArt.js?v=55";
+import { startFallingCards } from "./fallingCards.js?v=55";
+import { startSplash } from "./splash.js?v=55";
+import { getSavedSession, clearSavedSession } from "./movelog.js?v=55";
 
 // Start downloading the table sounds while players are still on the menu.
 preloadSounds();
-// Title logo, with a fan of real card faces peeking out behind it.
-document.getElementById("logoArt").innerHTML = titleLogoSVG();
-document.getElementById("logoFan").innerHTML = ["NO_DICE", "FILL_1000", "VENGEANCE", "DOUBLE_TROUBLE", "MUST_BUST"]
-  .map((id, i) => `<span class="fan-card" style="--i:${i - 2}">${cardFaceSVG({ id })}</span>`)
-  .join("");
+// The logo with a fan of real card faces peeking out behind it -- on the
+// title screen and again on the victory screen.
+function fillLogo(fanEl, artEl, n) {
+  artEl.innerHTML = titleLogoSVG(n);
+  fanEl.innerHTML = ["NO_DICE", "FILL_1000", "VENGEANCE", "DOUBLE_TROUBLE", "MUST_BUST"]
+    .map((id, i) => `<span class="fan-card" style="--i:${i - 2}">${cardFaceSVG({ id })}</span>`)
+    .join("");
+}
+fillLogo(document.getElementById("logoFan"), document.getElementById("logoArt"), 0);
+fillLogo(document.getElementById("winLogoFan"), document.getElementById("winLogoArt"), 1);
 startFallingCards(document.getElementById("setupScreen"));
+startSplash(document.getElementById("setupScreen"));
+startFallingCards(document.getElementById("gameOverModal"));
+
+// Every computer player is "Bernie" (then "Bernie 2", "Bernie 3"...).
+function bernieName(taken) {
+  const names = new Set(taken.map((n) => n.trim().toLowerCase()));
+  if (!names.has("bernie")) return "Bernie";
+  let k = 2;
+  while (names.has(`bernie ${k}`)) k++;
+  return `Bernie ${k}`;
+}
 // Speaker buttons (title screen + in-game) open the music/effects volume panel.
 attachSoundButton(document.getElementById("menuSoundBtn"));
 attachSoundButton(document.getElementById("muteBtn"));
@@ -48,8 +64,16 @@ function addPlayerRow(defaultName, defaultType) {
   `;
   const typeSel = row.querySelector(".p-type");
   const diffSel = row.querySelector(".p-diff");
-  const syncDiff = () => (diffSel.style.display = typeSel.value === "cpu" ? "" : "none");
-  typeSel.addEventListener("change", syncDiff);
+  // Hidden (not removed) for humans so every row keeps the same columns.
+  const syncDiff = () => (diffSel.style.visibility = typeSel.value === "cpu" ? "" : "hidden");
+  typeSel.addEventListener("change", () => {
+    // Switching a seat to CPU makes it Bernie; back to human, a player again.
+    const nameEl = row.querySelector(".p-name");
+    const others = playerRows.filter((r) => r !== row).map((r) => r.querySelector(".p-name").value);
+    if (typeSel.value === "cpu") nameEl.value = bernieName(others);
+    else if (/^bernie( \d+)?$/i.test(nameEl.value.trim())) nameEl.value = `Player ${playerRows.indexOf(row) + 1}`;
+    syncDiff();
+  });
   syncDiff();
   row.querySelector(".remove-row").addEventListener("click", () => {
     if (playerRows.length <= 2) return;
@@ -61,11 +85,11 @@ function addPlayerRow(defaultName, defaultType) {
 }
 
 addPlayerRow("Player 1", "human");
-addPlayerRow("CPU 1", "cpu");
+addPlayerRow("Bernie", "cpu");
 
 addPlayerBtn.addEventListener("click", () => {
   if (playerRows.length >= 6) return;
-  addPlayerRow(`Player ${playerRows.length + 1}`, "cpu");
+  addPlayerRow(bernieName(playerRows.map((r) => r.querySelector(".p-name").value)), "cpu");
 });
 
 startGameBtn.addEventListener("click", () => {
@@ -139,7 +163,7 @@ function setupOnlineMode() {
       clearFormError(rejoinBox);
       rejoinBtn.disabled = true;
       try {
-        const { NetSession } = await import("./net.js?v=45");
+        const { NetSession } = await import("./net.js?v=55");
         const net = new NetSession();
         const { game } = await net.rejoinRoom(saved.code, saved.playerId);
         enterRoom(net, game);
@@ -175,7 +199,7 @@ function setupOnlineMode() {
     const name = createNameInput.value.trim() || "Host";
     createRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=45");
+      const { NetSession } = await import("./net.js?v=55");
       const net = new NetSession();
       await net.createRoom(name);
       enterRoom(net, null);
@@ -196,7 +220,7 @@ function setupOnlineMode() {
     }
     joinRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=45");
+      const { NetSession } = await import("./net.js?v=55");
       const net = new NetSession();
       // Joining a game already under way with your old name puts you back
       // in your seat.
@@ -257,8 +281,7 @@ function enterLobby(net) {
 
   if (net.isHost) {
     lobbyAddCpuBtn.addEventListener("click", () => {
-      const cpuCount = latestPlayers.filter((p) => p.type === "cpu").length;
-      net.addCpuPlayer(`CPU ${cpuCount + 1}`, "normal");
+      net.addCpuPlayer(bernieName(latestPlayers.map((p) => p.name)), "normal");
     });
 
     lobbyStartBtn.addEventListener("click", async () => {
@@ -368,7 +391,7 @@ function launchGame(players, targetScore, netInfo) {
           `<span class="p-name"></span><span class="p-score">${fmt(p.score)}</span>` +
           `<span class="p-bar"><span style="width:${pct}%"></span></span>`;
         const nameEl = el.querySelector(".p-name");
-        nameEl.textContent = p.name + (p.type === "cpu" ? " 🤖" : "");
+        nameEl.textContent = p.name;
         let tag = null;
         if (p.cpuControlled) tag = ["CPU playing", ""];
         else if (online && p.type !== "cpu" && connectedSeats && !connectedSeats[i]) tag = ["offline", "off"];
@@ -440,10 +463,21 @@ function launchGame(players, targetScore, netInfo) {
     },
     showGameOver(winner, players) {
       const sorted = [...players].sort((a, b) => b.score - a.score);
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" })[c]);
       gameOverText.innerHTML =
-        `<h2>${winner.name} wins!</h2>` +
-        sorted.map((p, i) => `<div>${i + 1}. ${p.name} — ${p.score}</div>`).join("");
+        `<h2 class="win-name">${esc(winner.name)} wins!</h2>` +
+        `<ol class="standings">` +
+        sorted
+          .map((p) => `<li class="${p === winner ? "top" : ""}"><span>${esc(p.name)}</span><b>${fmt(p.score)}</b></li>`)
+          .join("") +
+        `</ol>`;
+      // Restart the pop-in + fan animations each time it opens.
+      const card = gameOverModal.querySelector(".win-card");
+      card.classList.remove("pop");
+      void card.offsetWidth;
+      card.classList.add("pop");
       gameOverModal.classList.remove("hidden");
+      sfx("stingerVengeance", { vol: 0.7, rate: 1 });
       if (online) clearSavedSession(); // nothing left to rejoin
     },
     // Closes the Vengeance question if the decision got made elsewhere.
@@ -581,18 +615,6 @@ function launchGame(players, targetScore, netInfo) {
     netInfo?.net.leaveRoom();
     window.location.reload();
   });
-
-  // Table scene picker + sound toggle (both per-device, cosmetic only).
-  const sceneSel = document.getElementById("sceneSel");
-  sceneSel.innerHTML = "";
-  for (const s of Dice3D.scenes) {
-    const opt = document.createElement("option");
-    opt.value = s.id;
-    opt.textContent = s.name;
-    sceneSel.appendChild(opt);
-  }
-  sceneSel.value = getSceneId();
-  sceneSel.addEventListener("change", () => game.dice3d.setScene(sceneSel.value));
 
   // debug handle for inspecting game/dice state from the console
   window.__game = game;

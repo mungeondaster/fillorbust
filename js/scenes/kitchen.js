@@ -8,8 +8,8 @@
 import * as THREE from "../vendor/three.module.min.js";
 import { GLTFLoader } from "../vendor/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "../vendor/addons/environments/RoomEnvironment.js";
-import { feltTexture } from "./common.js?v=45";
-import { paintCardFace } from "../cardArt.js?v=45";
+import { feltTexture } from "./common.js?v=55";
+import { paintCardFace } from "../cardArt.js?v=55";
 
 const BASE = "assets/scenes/kitchen/";
 const FOG = 0x140d08;
@@ -189,10 +189,10 @@ export default {
   async build({ root, renderer, quality }) {
     const texLoader = new THREE.TextureLoader();
     const [gltf, info, lmTable, lmTray] = await Promise.all([
-      new GLTFLoader().loadAsync(BASE + "kitchen.glb?v=45"),
-      fetch(BASE + "scene.json?v=45").then((r) => r.json()),
-      loadTex(texLoader, BASE + "lm_table.jpg?v=45"),
-      loadTex(texLoader, BASE + "lm_tray.jpg?v=45"),
+      new GLTFLoader().loadAsync(BASE + "kitchen.glb?v=55"),
+      fetch(BASE + "scene.json?v=55").then((r) => r.json()),
+      loadTex(texLoader, BASE + "lm_table.jpg?v=55"),
+      loadTex(texLoader, BASE + "lm_tray.jpg?v=55"),
     ]);
     const lightmaps = { lm_table: lmTable, lm_tray: lmTray };
     for (const t of Object.values(lightmaps)) {

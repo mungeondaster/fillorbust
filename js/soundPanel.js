@@ -2,7 +2,7 @@
 // mute switch. One shared popover; any number of buttons can open it (the
 // title screen has one, the in-game status bar another).
 
-import { isMuted, setMuted, getVolumes, setMusicVolume, setSfxVolume, unlockAudio } from "./sound.js?v=45";
+import { isMuted, setMuted, getVolumes, setMusicVolume, setSfxVolume, unlockAudio } from "./sound.js?v=55";
 
 let panel = null;
 let openFor = null;

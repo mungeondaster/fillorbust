@@ -1,11 +1,11 @@
-import { Dice3D } from "./dice3d.js?v=45";
-import { CardTable } from "./cardsUI.js?v=45";
-import { Deck } from "./deck.js?v=45";
-import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=45";
-import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=45";
-import { LocalNet } from "./movelog.js?v=45";
-import { playBank, playBust, sfx, setSoundGate } from "./sound.js?v=45";
-import { playCardStinger } from "./stingers.js?v=45";
+import { Dice3D } from "./dice3d.js?v=55";
+import { CardTable } from "./cardsUI.js?v=55";
+import { Deck } from "./deck.js?v=55";
+import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=55";
+import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=55";
+import { LocalNet } from "./movelog.js?v=55";
+import { playBank, playBust, sfx, setSoundGate } from "./sound.js?v=55";
+import { playCardStinger } from "./stingers.js?v=55";
 
 const BONUS_VALUE = { BONUS_300: 300, BONUS_400: 400, BONUS_500: 500 };
 

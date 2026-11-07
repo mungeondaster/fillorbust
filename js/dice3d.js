@@ -11,10 +11,10 @@
 // Physics is a recorded cannon-es pre-simulation (see physics.js); this file
 // plays it back, plus sound. Scenery comes from js/scenes/*.
 import * as THREE from "./vendor/three.module.min.js";
-import { simulateRoll, PHYS, FACE_NORMALS } from "./physics.js?v=45";
-import { playImpact, sfx } from "./sound.js?v=45";
-import { SCENES, getSceneId, saveSceneId } from "./scenes/index.js?v=45";
-import { pipTextures, roundedBoxGeometry } from "./scenes/common.js?v=45";
+import { simulateRoll, PHYS, FACE_NORMALS } from "./physics.js?v=55";
+import { playImpact, sfx } from "./sound.js?v=55";
+import { SCENES, getSceneId, saveSceneId } from "./scenes/index.js?v=55";
+import { pipTextures, roundedBoxGeometry } from "./scenes/common.js?v=55";
 
 const HALF = 0.5;
 const UP = new THREE.Vector3(0, 1, 0);

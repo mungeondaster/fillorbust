@@ -1,4 +1,4 @@
-import { buildDeck } from "./constants.js?v=45";
+import { buildDeck } from "./constants.js?v=55";
 
 export class Deck {
   // rng: a seeded generator shared by every player's device (see game.js),

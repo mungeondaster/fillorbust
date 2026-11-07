@@ -1,5 +1,5 @@
-import { sfx } from "./sound.js?v=45";
-import { cardFaceSVG, cardBackSVG } from "./cardArt.js?v=45";
+import { sfx } from "./sound.js?v=55";
+import { cardFaceSVG, cardBackSVG } from "./cardArt.js?v=55";
 
 // The printed face of a card (falls back to its name in plain text).
 function faceMarkup(card) {
@@ -52,8 +52,7 @@ export class CardTable {
         <div class="draw-stack pile" id="drawStack"></div>
         <div class="pile-count" id="drawCount">0</div>
       </div>
-      <div class="card-rule" id="cardRule" aria-live="polite"></div>
-      <div class="active-slot">
+      <div class="active-slot" id="activeSlot">
         <div class="card-slide" id="cardSlide">
           <div class="flip-card" id="flipCard">
             <div class="flip-inner">
@@ -62,6 +61,8 @@ export class CardTable {
             </div>
           </div>
         </div>
+        <span class="rule-badge" aria-hidden="true">i</span>
+        <div class="card-rule" id="cardRule" role="tooltip"></div>
       </div>
       <div class="pile-wrap discard">
         <div class="pile-label">Discard</div>
@@ -78,6 +79,25 @@ export class CardTable {
     this.flipInner = this.root.querySelector(".flip-inner");
     this.cardFront = this.root.querySelector("#cardFront");
     this.cardRule = this.root.querySelector("#cardRule");
+    this.activeSlot = this.root.querySelector("#activeSlot");
+
+    // What the card does: shown on hover (mouse) or by tapping the card
+    // (phones); a tap anywhere else, or a few seconds, hides it again.
+    let hideTimer = 0;
+    const hide = () => { clearTimeout(hideTimer); this.activeSlot.classList.remove("show-rule"); };
+    this.activeSlot.tabIndex = 0;
+    this.activeSlot.setAttribute("aria-describedby", "cardRule");
+    this.activeSlot.addEventListener("click", () => {
+      if (!this.cardRule.textContent) return;
+      if (this.activeSlot.classList.toggle("show-rule")) {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(hide, 6000);
+      }
+    });
+    document.addEventListener("pointerdown", (e) => {
+      if (!this.activeSlot.contains(e.target)) hide();
+    });
+    this._hideRule = hide;
   }
 
   render(deck) {
@@ -124,6 +144,7 @@ export class CardTable {
       return;
     }
     const hadPreviousCard = !!this.cardFront.dataset.type;
+    this._hideRule();
     this.cardRule.classList.add("fading");
 
     if (hadPreviousCard) {

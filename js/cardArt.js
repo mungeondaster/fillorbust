@@ -161,13 +161,13 @@ function back() {
 
 // Title-screen logo: the card back's look blown up -- a red slab with the
 // white band and the big slanted "FILL OR BUST!" across it.
-export function titleLogoSVG() {
+export function titleLogoSVG(n = 0) {
   const LW = 600, LH = 236, cx = LW / 2, cy = LH / 2;
   return (
     `<svg class="logo-art" viewBox="0 0 ${LW} ${LH}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fill or Bust!">` +
-    `<defs><clipPath id="logoClip"><rect x="8" y="8" width="${LW - 16}" height="${LH - 16}" rx="16"/></clipPath></defs>` +
+    `<defs><clipPath id="logoClip${n}"><rect x="8" y="8" width="${LW - 16}" height="${LH - 16}" rx="16"/></clipPath></defs>` +
     `<rect x="8" y="8" width="${LW - 16}" height="${LH - 16}" rx="16" fill="${RED}"/>` +
-    `<g clip-path="url(#logoClip)"><g transform="rotate(-7 ${cx} ${cy})">` +
+    `<g clip-path="url(#logoClip${n})"><g transform="rotate(-7 ${cx} ${cy})">` +
     `<rect x="-40" y="${cy - 58}" width="${LW + 80}" height="112" fill="${WHITE}"/>` +
     `<g transform="translate(${cx} ${cy}) skewX(-12) translate(${-cx} ${-cy})">` +
     word("FILL OR BUST!", { top: cy - 42, h: 82, w: 500, cx, fill: RED }) +

@@ -36,7 +36,7 @@ import {
   startAfter,
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
 
-import { EventLog, saveSession, clearSavedSession } from "./movelog.js?v=45";
+import { EventLog, saveSession, clearSavedSession } from "./movelog.js?v=55";
 
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I
 

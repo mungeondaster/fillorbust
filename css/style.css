@@ -91,9 +91,11 @@ select option {
 }
 
 .player-rows { display: flex; flex-direction: column; gap: 8px; }
+/* The two dropdowns size to their longest option ("Human", "Normal") so
+   nothing is ever cut off; the name box takes whatever is left. */
 .player-row {
   display: grid;
-  grid-template-columns: 1fr 90px 90px 32px;
+  grid-template-columns: minmax(0, 1fr) auto auto 32px;
   gap: 6px;
   align-items: center;
 }
@@ -243,8 +245,8 @@ button:not(:disabled):active { transform: translateY(0); }
 
 #statusBar {
   flex: none;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
@@ -252,7 +254,14 @@ button:not(:disabled):active { transform: translateY(0); }
   border-bottom: 1px solid rgba(212,175,55,0.25);
 }
 #mainMenuBtn { justify-self: start; }
+/* The play-by-play line is hidden from view (the table, scoreboard and
+   buttons already show what is happening) but still read by screen readers. */
 #statusText {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
   font-weight: 600;
   color: var(--gold-light);
   letter-spacing: 0.5px;
@@ -277,7 +286,7 @@ button:not(:disabled):active { transform: translateY(0); }
   margin: 0 auto;
 }
 #leftCol { grid-area: score; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; scrollbar-width: none; }
-#cardTable { grid-area: card; }
+#cardTable { grid-area: card; position: relative; z-index: 5; } /* rule bubble floats over the table */
 #stageCol { grid-area: stage; }
 
 .panel {
@@ -382,27 +391,92 @@ button:not(:disabled):active { transform: translateY(0); }
   align-self: start;
   max-height: 100%;
   display: grid;
-  grid-template-areas: "title title" "active active" "rule rule" "draw discard";
+  grid-template-areas: "title title" "active active" "draw discard";
   grid-template-columns: 1fr 1fr;
   justify-items: center;
-  gap: 10px 8px;
-  --card-w: 150px;
-  --card-h: 210px;
+  gap: 12px 8px;
+  --card-w: 176px;
+  --card-h: 246px;
   --pile-w: 70px;
   --pile-h: 98px;
 }
 #cardTable > .panel-title { grid-area: title; justify-self: stretch; margin-bottom: 0; }
-#cardTable .active-slot { grid-area: active; }
+#cardTable .active-slot {
+  grid-area: active;
+  position: relative;
+  z-index: 10; /* above the piles, so the rule bubble is never covered */
+  width: var(--card-w);
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+/* What the card does: a bubble under the card, on hover or tap. */
 .card-rule {
-  grid-area: rule;
-  min-height: 3.6em;
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  max-width: min(240px, 86vw);
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(8, 26, 17, 0.97);
+  border: 1px solid var(--gold);
+  box-shadow: var(--shadow-lg);
   font-size: 0.85rem;
   line-height: 1.35;
   text-align: center;
-  opacity: 0.9;
-  transition: opacity 0.25s ease;
+  color: var(--cream);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -4px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
 }
-.card-rule.fading { opacity: 0; }
+.card-rule::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border-left: 1px solid var(--gold);
+  border-top: 1px solid var(--gold);
+  transform: translateX(-50%) rotate(45deg);
+}
+.active-slot.show-rule .card-rule:not(.fading):not(:empty),
+.active-slot:focus-visible .card-rule:not(.fading):not(:empty) {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+@media (hover: hover) {
+  .active-slot:hover .card-rule:not(.fading):not(:empty) {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
+}
+.rule-badge {
+  position: absolute;
+  z-index: 2;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: italic 700 0.75rem/1 Georgia, serif;
+  color: #2a1e08;
+  background: var(--gold-light);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.active-slot:has(.card-rule:not(:empty):not(.fading)) .rule-badge { opacity: 1; }
 #cardTable .pile-wrap.draw { grid-area: draw; }
 #cardTable .pile-wrap.discard { grid-area: discard; }
 
@@ -870,7 +944,7 @@ button:not(:disabled):active { transform: translateY(0); }
 @media (max-height: 820px) and (min-width: 721px) {
   #gameLayout { gap: 10px; padding: 10px; }
   #stageCol { gap: 10px; }
-  #cardTable { --card-w: 128px; --card-h: 179px; --pile-w: 58px; --pile-h: 81px; gap: 8px; }
+  #cardTable { --card-w: 150px; --card-h: 210px; --pile-w: 58px; --pile-h: 81px; gap: 8px; }
   #turnScoreVal { font-size: 2.2rem; }
 }
 
@@ -886,7 +960,7 @@ button:not(:disabled):active { transform: translateY(0); }
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas: "stage score" "stage card";
   }
-  #cardTable { --card-w: 120px; --card-h: 168px; --pile-w: 54px; --pile-h: 76px; }
+  #cardTable { --card-w: 146px; --card-h: 204px; --pile-w: 54px; --pile-h: 76px; }
   #actionBar {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas: "turn select" "controls controls";
@@ -899,9 +973,8 @@ button:not(:disabled):active { transform: translateY(0); }
 /* Phone: everything in one column, the table flexes, the action bar sits
    at the bottom where thumbs are. */
 @media (max-width: 720px) {
-  #statusBar { grid-template-columns: auto 1fr auto; padding: 6px 8px; gap: 8px; }
+  #statusBar { padding: 6px 8px; gap: 8px; }
   #statusText { font-size: 0.85rem; }
-  .status-tools select { max-width: 118px; font-size: 0.72rem; padding: 5px 4px; }
   .net-badge { font-size: 0; padding: 4px 7px; }
   .net-badge::before { content: "Offline"; font-size: 0.66rem; }
   #mainMenuBtn { padding: 5px 9px; }
@@ -921,33 +994,42 @@ button:not(:disabled):active { transform: translateY(0); }
   #playerList { flex-direction: row; overflow-x: auto; gap: 6px; scrollbar-width: none; }
   .player-card { flex: 1 0 auto; min-width: 92px; padding: 5px 8px 7px; font-size: 0.85rem; }
 
-  /* Card strip: [small card] [rule text] [draw] [discard]. */
+  /* Card strip: [draw] [the card in play, big] [discard]; tap the card for
+     what it does. */
   #cardTable {
-    grid-template-areas: "active rule draw discard";
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "draw active discard";
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: 8px;
-    --card-w: 64px; --card-h: 90px; --pile-w: 34px; --pile-h: 48px;
+    --card-h: clamp(150px, 24dvh, 220px); --card-w: calc(var(--card-h) / 1.4); --pile-w: 50px; --pile-h: 70px;
   }
   #cardTable > .panel-title { display: none; }
-  .card-rule { text-align: left; font-size: 0.75rem; min-height: 0; justify-self: stretch; }
+  .card-rule { font-size: 0.82rem; }
   .card-face { padding: 4px; border-width: 1.5px; }
   .card-face .card-title { font-size: calc(var(--card-w) * 0.15); }
   .pile-label { font-size: 0.55rem; }
 
   #stageCol { gap: 8px; }
-  #diceStage { min-height: 180px; }
+  #diceStage { min-height: 150px; }
+  /* Action bar: [turn score ... selected score] / six big dice across the
+     full width / buttons. */
   #actionBar {
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas: "turn select" "controls controls";
+    grid-template-areas: "turn pending" "dice dice" "controls controls";
+    align-items: center;
     gap: 6px 10px;
-    padding: 8px 10px;
+    padding: 8px 10px 10px;
+    container-type: inline-size;
   }
-  #scorePanel { min-width: 74px; }
-  #turnScoreVal { font-size: 1.7rem; }
+  #selectArea { display: contents; }
+  #pendingScore { grid-area: pending; justify-self: end; min-height: 0; }
+  #diceRow { grid-area: dice; gap: 6px; justify-content: space-between; }
+  #scorePanel { min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left; }
+  #turnScoreVal { font-size: 1.5rem; }
   #heldRow { display: none; }
-  .die-slot { --die: clamp(26px, calc((100cqi - 30px) / 6), 42px); padding: 4px; border-radius: 8px; }
-  #diceRow { gap: 5px; }
+  .die-slot { --die: clamp(34px, calc((100cqi - 30px) / 6), 64px); padding: 7px; border-radius: 10px; }
+  .pip-grid { gap: 3px; }
+  #controls { grid-area: controls; }
   #controls button { flex: 1; padding: 12px 6px; font-size: 0.92rem; }
   .banner-title { font-size: 1.3rem; }
 }
@@ -1066,8 +1148,140 @@ button:not(:disabled):active { transform: translateY(0); }
 @media (max-width: 520px) {
   #setupScreen, #lobbyScreen { padding: 14px 10px; }
   .setup-card { padding: 22px 16px; }
-  .player-row { grid-template-columns: 1fr 76px 76px 24px; gap: 5px; }
-  .player-row select { padding: 8px 4px; }
+  .player-row { gap: 5px; grid-template-columns: minmax(0, 1fr) auto auto 22px; }
+  .player-row select { padding: 8px 2px 8px 6px; font-size: 0.88rem; }
+  .player-row .p-name { padding: 8px; }
   .title-logo { margin: 0 -12px 20px; padding-top: 62px; }
   .fan-card { width: 64px; height: 90px; left: -32px; }
 }
+
+/* ---------------- Victory screen ----------------
+   The title logo + card fan over a gold-trimmed results panel, with the
+   title screen's falling cards drifting behind (js/fallingCards.js). */
+.win-modal { overflow: hidden; padding: 16px; }
+.win-modal .falling-cards { z-index: 0; }
+.win-card {
+  position: relative;
+  z-index: 1;
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.win-card.pop { animation: winPop 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.25) both; }
+@keyframes winPop {
+  from { transform: scale(0.6) translateY(30px); opacity: 0; }
+}
+/* Fan only deals out once the box has popped in. */
+.win-card:not(.pop) .fan-card { animation: none; }
+.win-card.pop .fan-card { animation-delay: calc(0.35s + (var(--i) + 2) * 70ms); }
+.win-logo { margin: 0 0 -18px; position: relative; z-index: 2; }
+.win-body {
+  padding: 34px 28px 24px;
+  background: rgba(8, 30, 20, 0.94);
+  backdrop-filter: blur(6px);
+  border-width: 2px;
+}
+.win-body .win-name {
+  margin: 0 0 14px;
+  font-family: "Anton", Impact, sans-serif;
+  font-weight: 400;
+  font-size: clamp(2rem, 9vw, 2.9rem);
+  line-height: 1.05;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold-light);
+  text-shadow: 0 3px 0 #7a5a12, 0 6px 16px rgba(0, 0, 0, 0.6);
+  overflow-wrap: anywhere;
+}
+.win-card.pop .win-name { animation: winName 0.6s 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.4) both; }
+@keyframes winName { from { transform: scale(1.8); opacity: 0; } }
+.standings {
+  list-style: none;
+  counter-reset: place;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 300px;
+  text-align: left;
+}
+.standings li {
+  counter-increment: place;
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-family: "Anton", Impact, sans-serif;
+  font-size: 1.15rem;
+  letter-spacing: 0.5px;
+}
+.standings li::before { content: counter(place) "."; opacity: 0.6; }
+.standings li b { font-weight: 400; color: var(--gold-light); font-variant-numeric: tabular-nums; }
+.standings li.top { background: rgba(212, 175, 55, 0.16); border: 1px solid rgba(212, 175, 55, 0.5); }
+.standings li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.win-body .primary-btn.big {
+  margin-top: 20px;
+  font-family: "Anton", Impact, sans-serif;
+  font-weight: 400;
+  font-size: 1.3rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+@media (max-width: 520px) {
+  .win-body { padding: 28px 16px 18px; }
+  .win-logo { margin: 0 4px -14px; padding-top: 62px; }
+}
+
+/* ---------------- Tap to Play intro (js/splash.js) ----------------
+   While .splash is on, only the logo (moved to the middle by splash.js) and
+   the falling cards show; the menu panel and its contents are invisible.
+   .splash-out fades them back in as the logo flies home. */
+.title-logo { transform-origin: 50% 50%; will-change: transform; position: relative; z-index: 3; }
+#setupScreen .setup-card,
+#setupScreen .setup-card > :not(.title-logo),
+#setupScreen .menu-sound-btn {
+  transition: opacity 0.5s ease 0.45s, background-color 0.5s ease 0.45s, border-color 0.5s ease 0.45s,
+    box-shadow 0.5s ease 0.45s, backdrop-filter 0.5s ease 0.45s;
+}
+#setupScreen.splash .setup-card {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+#setupScreen.splash .setup-card > :not(.title-logo),
+#setupScreen.splash .menu-sound-btn { opacity: 0; pointer-events: none; }
+
+.splash-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: max(9vh, 40px);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.35s ease;
+}
+.splash-veil.leaving { opacity: 0; pointer-events: none; }
+.tap-to-play {
+  font-family: "Anton", Impact, sans-serif;
+  font-size: clamp(1.6rem, 6vw, 2.3rem);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--gold-light);
+  background: rgba(8, 30, 20, 0.6);
+  border: 2px solid var(--gold);
+  border-radius: 999px;
+  padding: 10px 34px;
+  cursor: pointer;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 24px rgba(212, 175, 55, 0.35);
+  animation: tapPulse 1.6s ease-in-out infinite;
+}
+@keyframes tapPulse {
+  50% { transform: scale(1.06); box-shadow: 0 0 36px rgba(212, 175, 55, 0.6); }
+}
+@media (prefers-reduced-motion: reduce) { .tap-to-play { animation: none; } }
