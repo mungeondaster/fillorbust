@@ -1,4 +1,10 @@
-import { sfx } from "./sound.js?v=33";
+import { sfx } from "./sound.js?v=45";
+import { cardFaceSVG, cardBackSVG } from "./cardArt.js?v=45";
+
+// The printed face of a card (falls back to its name in plain text).
+function faceMarkup(card) {
+  return cardFaceSVG(card) ?? `<div class="card-title">${card.label}</div>`;
+}
 
 // Renders the draw pile / discard pile / active card as authentic-looking
 // physical playing cards: slightly uneven stacking, soft shadows, a flip
@@ -12,7 +18,7 @@ function seededOffset(seed) {
   return frac;
 }
 
-function buildStackLayers(container, count, cls, topLabel) {
+function buildStackLayers(container, count, cls, topCard) {
   container.innerHTML = "";
   const layers = Math.min(count, 7);
   for (let i = 0; i < layers; i++) {
@@ -23,9 +29,11 @@ function buildStackLayers(container, count, cls, topLabel) {
     const dy = -i * 1.1;
     layer.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
     layer.style.zIndex = String(i);
-    if (topLabel && i === layers - 1) {
+    if (cls === "back") {
+      layer.innerHTML = cardBackSVG();
+    } else if (topCard && i === layers - 1) {
       layer.classList.add("card-layer-labeled");
-      layer.textContent = topLabel;
+      layer.innerHTML = faceMarkup(topCard);
     }
     container.appendChild(layer);
   }
@@ -49,7 +57,7 @@ export class CardTable {
         <div class="card-slide" id="cardSlide">
           <div class="flip-card" id="flipCard">
             <div class="flip-inner">
-              <div class="card-face card-back"></div>
+              <div class="card-face card-back">${cardBackSVG()}</div>
               <div class="card-face card-front" id="cardFront"></div>
             </div>
           </div>
@@ -79,7 +87,7 @@ export class CardTable {
       this.discardStack,
       deck.discardPile.length,
       "discard-face",
-      lastDiscard && lastDiscard.label
+      lastDiscard
     );
     this.drawCount.textContent = String(deck.drawPile.length);
     this.discardCount.textContent = String(deck.discardPile.length);
@@ -97,7 +105,24 @@ export class CardTable {
     };
   }
 
-  async draw(card, deck) {
+  async draw(card, deck, instant = false) {
+    if (instant) {
+      // Catching up on missed moves: just show the result.
+      this.cardSlide.style.transition = "none";
+      this.cardSlide.style.transform = "translate(0px, 0px) scale(1) rotate(0deg)";
+      this.cardSlide.style.opacity = "1";
+      this.flipInner.style.transition = "none";
+      this.cardFront.innerHTML = faceMarkup(card);
+      this.cardFront.title = card.desc;
+      this.cardFront.dataset.type = card.id;
+      this.flipCard.classList.add("flipped");
+      void this.cardSlide.offsetWidth;
+      this.flipInner.style.transition = "";
+      this.cardRule.textContent = card.desc;
+      this.cardRule.classList.remove("fading");
+      this.render(deck);
+      return;
+    }
     const hadPreviousCard = !!this.cardFront.dataset.type;
     this.cardRule.classList.add("fading");
 
@@ -138,7 +163,7 @@ export class CardTable {
     this.cardSlide.style.transform = "translate(0, 0) scale(1) rotate(0deg)";
     await wait(400);
 
-    this.cardFront.innerHTML = `<div class="card-title">${card.label}</div>`;
+    this.cardFront.innerHTML = faceMarkup(card);
     this.cardFront.title = card.desc;
     this.cardFront.dataset.type = card.id;
     await wait(80);

@@ -1,10 +1,23 @@
-import { Game } from "./game.js?v=33";
-import { Dice3D } from "./dice3d.js?v=33";
-import { getSceneId } from "./scenes/index.js?v=33";
-import { unlockAudio, isMuted, setMuted, preloadSounds, sfx } from "./sound.js?v=33";
+import { Game } from "./game.js?v=45";
+import { Dice3D } from "./dice3d.js?v=45";
+import { getSceneId } from "./scenes/index.js?v=45";
+import { unlockAudio, preloadSounds, sfx } from "./sound.js?v=45";
+import { attachSoundButton } from "./soundPanel.js?v=45";
+import { titleLogoSVG, cardFaceSVG } from "./cardArt.js?v=45";
+import { startFallingCards } from "./fallingCards.js?v=45";
+import { getSavedSession, clearSavedSession } from "./movelog.js?v=45";
 
 // Start downloading the table sounds while players are still on the menu.
 preloadSounds();
+// Title logo, with a fan of real card faces peeking out behind it.
+document.getElementById("logoArt").innerHTML = titleLogoSVG();
+document.getElementById("logoFan").innerHTML = ["NO_DICE", "FILL_1000", "VENGEANCE", "DOUBLE_TROUBLE", "MUST_BUST"]
+  .map((id, i) => `<span class="fan-card" style="--i:${i - 2}">${cardFaceSVG({ id })}</span>`)
+  .join("");
+startFallingCards(document.getElementById("setupScreen"));
+// Speaker buttons (title screen + in-game) open the music/effects volume panel.
+attachSoundButton(document.getElementById("menuSoundBtn"));
+attachSoundButton(document.getElementById("muteBtn"));
 import { MULTIPLAYER_ENABLED } from "./firebaseConfig.js";
 
 const setupScreen = document.getElementById("setupScreen");
@@ -114,6 +127,36 @@ function setupOnlineMode() {
     showPane(onlineChoicePane);
   });
 
+  // Refreshed, closed the tab, or the phone dropped the page? Offer to put
+  // this browser straight back into the online game it was in.
+  const saved = getSavedSession();
+  const rejoinBox = document.getElementById("rejoinBox");
+  if (saved) {
+    document.getElementById("rejoinCode").textContent = saved.code;
+    rejoinBox.classList.remove("hidden");
+    const rejoinBtn = document.getElementById("rejoinBtn");
+    rejoinBtn.addEventListener("click", async () => {
+      clearFormError(rejoinBox);
+      rejoinBtn.disabled = true;
+      try {
+        const { NetSession } = await import("./net.js?v=45");
+        const net = new NetSession();
+        const { game } = await net.rejoinRoom(saved.code, saved.playerId);
+        enterRoom(net, game);
+      } catch (err) {
+        clearSavedSession();
+        showFormError(rejoinBox, err.message || "Couldn't rejoin that game.");
+        rejoinBtn.classList.add("hidden");
+      } finally {
+        rejoinBtn.disabled = false;
+      }
+    });
+    document.getElementById("rejoinDismissBtn").addEventListener("click", () => {
+      clearSavedSession();
+      rejoinBox.classList.add("hidden");
+    });
+  }
+
   createRoomChoiceBtn.addEventListener("click", () => showPane(createRoomPane));
   joinRoomChoiceBtn.addEventListener("click", () => showPane(joinRoomPane));
   document.querySelectorAll(".online-back-btn").forEach((btn) => {
@@ -132,10 +175,10 @@ function setupOnlineMode() {
     const name = createNameInput.value.trim() || "Host";
     createRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=33");
+      const { NetSession } = await import("./net.js?v=45");
       const net = new NetSession();
-      const { playerId } = await net.createRoom(name);
-      enterLobby(net, playerId);
+      await net.createRoom(name);
+      enterRoom(net, null);
     } catch (err) {
       showFormError(createRoomPane, err.message || "Couldn't create room. Check your Firebase setup.");
     } finally {
@@ -153,10 +196,12 @@ function setupOnlineMode() {
     }
     joinRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=33");
+      const { NetSession } = await import("./net.js?v=45");
       const net = new NetSession();
-      const { playerId } = await net.joinRoom(code, name);
-      enterLobby(net, playerId);
+      // Joining a game already under way with your old name puts you back
+      // in your seat.
+      const { game } = await net.joinRoom(code, name);
+      enterRoom(net, game);
     } catch (err) {
       showFormError(joinRoomPane, err.message || "Couldn't join that room.");
     } finally {
@@ -165,7 +210,23 @@ function setupOnlineMode() {
   });
 }
 
-function enterLobby(net, myFirebasePlayerId) {
+// After creating/joining/rejoining a room: straight into the game if it's
+// already under way, otherwise the lobby until the host starts it.
+function enterRoom(net, game) {
+  window.__net = net; // debug handle
+  setupScreen.classList.add("hidden");
+  if (game) startOnlineGame(net, game);
+  else enterLobby(net);
+}
+
+function startOnlineGame(net, { players, targetScore, seed }) {
+  const myPlayerId = players.findIndex((p) => p.fbId === net.myPlayerId);
+  lobbyScreen.classList.add("hidden");
+  gameScreen.classList.remove("hidden");
+  launchGame(players, targetScore, { net, myPlayerId: myPlayerId < 0 ? null : myPlayerId, seed });
+}
+
+function enterLobby(net) {
   const lobbyRoomCode = document.getElementById("lobbyRoomCode");
   const lobbyPlayers = document.getElementById("lobbyPlayers");
   const lobbyHostControls = document.getElementById("lobbyHostControls");
@@ -175,9 +236,6 @@ function enterLobby(net, myFirebasePlayerId) {
   const lobbyWaitingMsg = document.getElementById("lobbyWaitingMsg");
   const lobbyLeaveBtn = document.getElementById("lobbyLeaveBtn");
 
-  window.__net = net; // debug handle
-
-  setupScreen.classList.add("hidden");
   lobbyScreen.classList.remove("hidden");
   lobbyRoomCode.textContent = net.roomCode;
   lobbyHostControls.classList.toggle("hidden", !net.isHost);
@@ -215,12 +273,15 @@ function enterLobby(net, myFirebasePlayerId) {
         if (p.type === "cpu") player.difficulty = p.difficulty;
         return player;
       });
+      const lobbyError = document.getElementById("lobbyError");
+      lobbyError.classList.add("hidden");
       lobbyStartBtn.disabled = true;
       try {
         await net.startGame(players, targetScore);
       } catch (err) {
         lobbyStartBtn.disabled = false;
-        window.alert("Couldn't start the game: " + (err.message || err));
+        lobbyError.textContent = "Couldn't start the game: " + (err.message || err);
+        lobbyError.classList.remove("hidden");
       }
     });
   }
@@ -230,14 +291,7 @@ function enterLobby(net, myFirebasePlayerId) {
     window.location.reload();
   });
 
-  net.startListening();
-  net.next("gameStarted").then(({ players, targetScore }) => {
-    const myPlayerId = players.findIndex((p) => p.fbId === myFirebasePlayerId);
-    const gamePlayers = players.map(({ fbId, ...rest }) => rest);
-    lobbyScreen.classList.add("hidden");
-    gameScreen.classList.remove("hidden");
-    launchGame(gamePlayers, targetScore, { net, myPlayerId });
-  });
+  net.onGameStarted((game) => startOnlineGame(net, game));
 }
 
 function launchGame(players, targetScore, netInfo) {
@@ -273,7 +327,10 @@ function launchGame(players, targetScore, netInfo) {
   // treats "not assigned yet" as "yes" (matches single-device behavior,
   // and that split-second window is over before a real player ever acts).
   let game;
-  const isMyTurn = () => !game || game.myPlayerId === null || game.currentPlayer.id === game.myPlayerId;
+  const isMyTurn = () => !game || game.isLocalSeat(game.currentPlayer);
+  const online = !!netInfo?.net;
+  let connectedSeats = null; // online: seat index -> connected right now?
+  let cancelVengeancePrompt = null;
 
   const ui = {
     setStatus(text) {
@@ -310,7 +367,17 @@ function launchGame(players, targetScore, netInfo) {
         el.innerHTML =
           `<span class="p-name"></span><span class="p-score">${fmt(p.score)}</span>` +
           `<span class="p-bar"><span style="width:${pct}%"></span></span>`;
-        el.querySelector(".p-name").textContent = p.name + (p.type === "cpu" ? " 🤖" : "");
+        const nameEl = el.querySelector(".p-name");
+        nameEl.textContent = p.name + (p.type === "cpu" ? " 🤖" : "");
+        let tag = null;
+        if (p.cpuControlled) tag = ["CPU playing", ""];
+        else if (online && p.type !== "cpu" && connectedSeats && !connectedSeats[i]) tag = ["offline", "off"];
+        if (tag) {
+          const t = document.createElement("span");
+          t.className = "p-tag " + tag[1];
+          t.textContent = tag[0];
+          nameEl.appendChild(t);
+        }
         playersEl.appendChild(el);
       });
       playersEl.querySelector(".active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -377,6 +444,11 @@ function launchGame(players, targetScore, netInfo) {
         `<h2>${winner.name} wins!</h2>` +
         sorted.map((p, i) => `<div>${i + 1}. ${p.name} — ${p.score}</div>`).join("");
       gameOverModal.classList.remove("hidden");
+      if (online) clearSavedSession(); // nothing left to rejoin
+    },
+    // Closes the Vengeance question if the decision got made elsewhere.
+    cancelVengeance() {
+      cancelVengeancePrompt?.();
     },
     promptVengeance(leaders) {
       const names = leaders.map((p) => p.name).join(" & ");
@@ -387,9 +459,14 @@ function launchGame(players, targetScore, netInfo) {
       vengeanceModal.classList.remove("hidden");
       return new Promise((resolve) => {
         const cleanup = () => {
+          cancelVengeancePrompt = null;
           vengeanceModal.classList.add("hidden");
           vengeancePlayBtn.removeEventListener("click", onPlay);
           vengeanceDeclineBtn.removeEventListener("click", onDecline);
+        };
+        cancelVengeancePrompt = () => {
+          cleanup();
+          resolve(null);
         };
         const onPlay = () => {
           cleanup();
@@ -464,7 +541,10 @@ function launchGame(players, targetScore, netInfo) {
     ui,
     net: netInfo?.net,
     myPlayerId: netInfo?.myPlayerId,
+    seed: netInfo?.seed,
   });
+
+  if (online) watchConnections(game, netInfo.net, players, () => ui.renderPlayers(game.players, game.gameOver ? -1 : game.currentPlayerIndex), (seats) => (connectedSeats = seats));
 
   dieSlots.forEach((slot, i) => {
     slot.addEventListener("click", () => {
@@ -486,11 +566,20 @@ function launchGame(players, targetScore, netInfo) {
     game.humanBank();
   });
   playAgainBtn.addEventListener("click", () => window.location.reload());
-  mainMenuBtn.addEventListener("click", () => {
-    if (window.confirm("Return to the Main Menu? Your current game will be lost.")) {
-      netInfo?.net.leaveRoom();
-      window.location.reload();
-    }
+  // In-game confirm (not window.confirm, which some embedded/mobile
+  // browsers block or auto-dismiss).
+  const leaveModal = document.getElementById("leaveModal");
+  mainMenuBtn.addEventListener("click", () => leaveModal.classList.remove("hidden"));
+  document.getElementById("leaveCancelBtn").addEventListener("click", () => leaveModal.classList.add("hidden"));
+  leaveModal.addEventListener("click", (e) => {
+    if (e.target === leaveModal) leaveModal.classList.add("hidden");
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") leaveModal.classList.add("hidden");
+  });
+  document.getElementById("leaveConfirmBtn").addEventListener("click", () => {
+    netInfo?.net.leaveRoom();
+    window.location.reload();
   });
 
   // Table scene picker + sound toggle (both per-device, cosmetic only).
@@ -505,19 +594,64 @@ function launchGame(players, targetScore, netInfo) {
   sceneSel.value = getSceneId();
   sceneSel.addEventListener("change", () => game.dice3d.setScene(sceneSel.value));
 
-  const muteBtn = document.getElementById("muteBtn");
-  const syncMute = () => {
-    muteBtn.textContent = isMuted() ? "🔇" : "🔊";
-    muteBtn.title = isMuted() ? "Sound off" : "Sound on";
-  };
-  syncMute();
-  muteBtn.addEventListener("click", () => {
-    setMuted(!isMuted());
-    syncMute();
-  });
-
   // debug handle for inspecting game/dice state from the console
   window.__game = game;
+}
+
+// Online only: who's connected, this device's own connection, and the
+// "waiting for X" banner -- with a way to let the CPU take over a seat whose
+// player has been gone a while, so nobody's stuck waiting.
+const TAKEOVER_AFTER_MS = 15000;
+function watchConnections(game, net, seatPlayers, rerender, setSeats) {
+  const waitBanner = document.getElementById("waitBanner");
+  const waitText = document.getElementById("waitText");
+  const takeOverBtn = document.getElementById("takeOverBtn");
+  const netBadge = document.getElementById("netBadge");
+
+  let seats = seatPlayers.map(() => true);
+  const offlineSince = new Map(); // seat -> time first seen offline
+  net.subscribePlayers((list) => {
+    const byId = new Map(list.map((p) => [p.id, p]));
+    seats = seatPlayers.map((p) => p.type === "cpu" || !!byId.get(p.fbId)?.connId);
+    seats.forEach((on, i) => {
+      if (on) offlineSince.delete(i);
+      else if (!offlineSince.has(i)) offlineSince.set(i, Date.now());
+    });
+    setSeats(seats);
+    rerender();
+    refresh();
+  });
+
+  net.onConnectionChange((on) => {
+    netBadge.classList.toggle("hidden", on);
+    refresh();
+  });
+
+  let busy = false;
+  takeOverBtn.addEventListener("click", async () => {
+    const seat = Number(takeOverBtn.dataset.seat);
+    busy = true;
+    takeOverBtn.disabled = true;
+    await game.takeOverSeat(seat);
+    busy = false;
+    takeOverBtn.disabled = false;
+    refresh();
+  });
+
+  function refresh() {
+    const seat = game.awaitingSeat;
+    const p = seat === null ? null : game.players[seat];
+    const gone = p && !game.gameOver && !seats[seat] && net.connected;
+    waitBanner.classList.toggle("hidden", !gone);
+    if (!gone) return;
+    waitText.textContent = `${p.name} seems to have lost connection. Waiting for them to come back…`;
+    const waited = Date.now() - (offlineSince.get(seat) ?? Date.now());
+    const canTake = waited >= TAKEOVER_AFTER_MS && !busy;
+    takeOverBtn.classList.toggle("hidden", !canTake);
+    takeOverBtn.dataset.seat = String(seat);
+    takeOverBtn.textContent = `Let the CPU play for ${p.name}`;
+  }
+  setInterval(refresh, 1000);
 }
 
 // Tiny drawn dice for the scoring cheat sheet (<span class="mini-dice" data-v="111">).

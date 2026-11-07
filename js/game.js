@@ -1,84 +1,103 @@
-import { Dice3D } from "./dice3d.js?v=33";
-import { CardTable } from "./cardsUI.js?v=33";
-import { Deck } from "./deck.js?v=33";
-import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=33";
-import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=33";
-import { NullNet } from "./net.js?v=33";
-import { sfx, playBank, playBust } from "./sound.js?v=33";
+import { Dice3D } from "./dice3d.js?v=45";
+import { CardTable } from "./cardsUI.js?v=45";
+import { Deck } from "./deck.js?v=45";
+import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=45";
+import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=45";
+import { LocalNet } from "./movelog.js?v=45";
+import { playBank, playBust, sfx, setSoundGate } from "./sound.js?v=45";
+import { playCardStinger } from "./stingers.js?v=45";
 
 const BONUS_VALUE = { BONUS_300: 300, BONUS_400: 400, BONUS_500: 500 };
 
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Small fast seeded PRNG: the same seed gives the same sequence on every device.
+function mulberry32(a) {
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const mix = (a, b) => (Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35)) >>> 0;
+const rollDie = (rng = Math.random) => 1 + Math.floor(rng() * 6);
+
+// How the game stays in sync online
+// ---------------------------------
+// Every device runs this same Game as a pure function of the start settings
+// (players, target, seed) plus an ordered log of human decisions (see
+// net.js). One turn is one pass through playTurn(); whenever a human has to
+// decide something, decide() takes the next entry from the log -- writing it
+// first if the decision is this device's to make. CPU seats never touch the
+// log: their dice come from the shared seed and their choices are
+// deterministic, so every device computes them identically. At the end of
+// every turn all devices also meet at a "turnEnd" entry, which is what lets a
+// device that fell behind (screen locked, refreshed, slow connection) notice
+// and fast-forward: whenever the log already holds entries past the one this
+// device is working on, it skips animations, pauses and sound until it's
+// caught up.
 export class Game {
-  // `net` (optional): a NetSession for online play, or the default inert
-  // NullNet for single-device play -- Game never branches on "am I online",
-  // it just always has one or the other.
-  // `myPlayerId` (optional): this client's own numeric index into `players`
-  // (matching the `id` Game assigns below), used to tell "my turn" apart
-  // from everyone else's. null in single-device play (every seat is "mine").
-  constructor({ diceContainer, cardContainer, players, targetScore, ui, net, myPlayerId }) {
+  // net: a NetSession for online play, or omitted for single-device play.
+  // myPlayerId: this device's own seat index online; null on a single device
+  // (where every human seat is "mine").
+  constructor({ diceContainer, cardContainer, players, targetScore, ui, net, myPlayerId, seed }) {
     this.dice3d = new Dice3D(diceContainer);
     this.cardTable = new CardTable(cardContainer);
-    this.deck = new Deck();
+    this.seed = (seed ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
+    this.deck = new Deck(mulberry32(this.seed));
     this.cardTable.render(this.deck);
 
-    this.players = players.map((p, i) => ({ ...p, id: i, score: 0 }));
+    this.players = players.map((p, i) => ({ ...p, id: i, score: 0, cpuControlled: false }));
     this.targetScore = targetScore;
     this.ui = ui;
-    this.net = net ?? new NullNet();
+    this.net = net ?? new LocalNet();
     this.myPlayerId = myPlayerId ?? null;
 
+    this.consumed = 0; // how many log entries this device has applied
+    this.turnNo = 0;
     this.currentPlayerIndex = 0;
     this.turnScore = 0;
     this.activeIndices = [0, 1, 2, 3, 4, 5];
     this.selected = new Set();
     this.currentCard = null;
     this.cardFlags = this._freshCardFlags();
-    this.hasFilledThisTurn = false;
     this.finalRoundTriggered = false;
     this.finalRoundStarter = null;
     this.gameOver = false;
+    this.awaitingSeat = null; // seat whose decision we're waiting on from another device
+    this._ask = null; // the decision currently offered to this device's player
+    this._reclaimSent = false;
 
-    this._startNetworkLoops();
-    this.startTurn();
+    setSoundGate(() => !this.fast);
+    this.done = this.run().catch((err) => {
+      console.error(err);
+      this.ui.setStatus("Something went wrong. Refresh the page to rejoin.");
+    });
   }
 
   get currentPlayer() {
     return this.players[this.currentPlayerIndex];
   }
 
-  // Whether THIS client is the one that should act for `player`: their own
-  // connected seat if human (myPlayerId is null in single-device play, where
-  // every seat is "mine"), or the host's client if CPU (CPU turns aren't
-  // tied to any particular human browser).
-  isAuthorityForPlayer(player) {
-    if (!player) return false;
-    if (player.type === "cpu") return this.net.isHost;
-    return this.myPlayerId === null || player.id === this.myPlayerId;
+  // Behind the log: catch up without animations, pauses or sound.
+  // (Also while the page is hidden: a background tab gets no animation
+  // frames, and nobody should have to wait on a player who switched apps.)
+  get fast() {
+    return this.net.logLength > this.consumed || document.hidden;
   }
 
-  // Standing listeners for events nothing on a non-acting client's own side
-  // would otherwise trigger (a button click or CPU timer only fires on the
-  // acting client). Each just applies the same shared logic a local action
-  // would -- see rollDice/humanBank/humanContinueAfterFill for the sending
-  // side of each of these.
-  _startNetworkLoops() {
-    this._loopNetEvent("diceRolled", ({ indices, values }) => this.applyRemoteRoll(indices, values));
-    this._loopNetEvent("humanHeld", ({ indices }) => {
-      const values = indices.map((i) => this.dice3d.dice[i].value);
-      const result = scoreSelection(values);
-      this.commitHold(indices, result.score);
-    });
-    this._loopNetEvent("humanBank", () => this.bank());
-    this._loopNetEvent("humanContinue", () => this.continueAfterFill());
+  pause(ms) {
+    return this.fast ? Promise.resolve() : wait(ms);
   }
 
-  _loopNetEvent(type, handler) {
-    (async () => {
-      for (;;) {
-        const payload = await this.net.next(type);
-        await handler(payload);
-      }
-    })();
+  isCpuSeat(p) {
+    return p.type === "cpu" || p.cpuControlled;
+  }
+
+  // A human seat this device's player acts for.
+  isLocalSeat(p) {
+    return !!p && !this.isCpuSeat(p) && (this.myPlayerId === null || p.id === this.myPlayerId);
   }
 
   _freshCardFlags() {
@@ -105,14 +124,38 @@ export class Game {
     return this.players.filter((p) => p.score === max);
   }
 
-  // ---------------- Turn lifecycle ----------------
+  // ---------------- Main loop ----------------
 
-  async startTurn() {
+  async run() {
+    await this.net.openLog();
+    while (!this.gameOver) {
+      await this.playTurn();
+      this._disableControls();
+
+      if (!this.finalRoundTriggered && this.currentPlayer.score >= this.targetScore) {
+        this.finalRoundTriggered = true;
+        this.finalRoundStarter = this.currentPlayerIndex;
+      }
+      const nextIndex = (this.currentPlayerIndex + 1) % this.players.length;
+      if (this.finalRoundTriggered && nextIndex === this.finalRoundStarter) {
+        this.finishGame();
+        return;
+      }
+
+      await this.syncTurnEnd();
+      this.currentPlayerIndex = nextIndex;
+      this.turnNo++;
+      await this.pause(900);
+    }
+  }
+
+  // One full turn. Returns when the turn is over (banked, bust, No Dice...).
+  async playTurn() {
     this.turnScore = 0;
     this.activeIndices = [0, 1, 2, 3, 4, 5];
     this.selected.clear();
-    this.hasFilledThisTurn = false;
     this.cardFlags = this._freshCardFlags();
+    this.turnRng = mulberry32(mix(this.seed, this.turnNo + 1)); // CPU dice for this turn
     this.dice3d.resetAll();
     this.ui.syncDiceState(this.dice3d.dice);
     this.ui.resetDiceFaces();
@@ -120,88 +163,302 @@ export class Game {
     this.ui.renderPlayers(this.players, this.currentPlayerIndex);
     this.ui.setTurnScore(0);
     this.ui.setHeld([]);
-    this.ui.setRollEnabled(false);
-    this.ui.setBankEnabled(false);
+    this._disableControls();
 
-    await this.drawAndApplyCard();
+    if (!(await this.drawCardPhase())) return;
+
+    let mayBank = false; // only after at least one hold since the last card
+    for (;;) {
+      const r = await this.decide(mayBank && !this.bankBlocked() ? ["roll", "bank"] : ["roll"]);
+      if (r.type === "bank") return this.bank();
+
+      if (!(await this.doRoll(r.values))) return; // bust ends the turn
+
+      const h = await this.decide(["hold"]);
+      this.commitHold(h.indices);
+      if (this.activeIndices.length > 0) {
+        mayBank = true;
+        continue;
+      }
+
+      // FILL: every die has scored.
+      this.handleFill();
+      if (this.bankBlocked()) {
+        await this.pause(900); // no real choice -- keep going
+      } else {
+        const c = await this.decide(["continue", "bank"]);
+        if (c.type === "bank") return this.bank();
+      }
+      this.resetForContinue();
+      // "You do not draw another card after each FILL when playing Must Bust."
+      if (!this.cardFlags.mustBust && !(await this.drawCardPhase())) return;
+      mayBank = false;
+    }
   }
 
-  // Draws a card, playing a shuffle animation first if the draw pile is
-  // about to run out and needs the discards reshuffled back in. The
-  // reshuffle-timing/pile-count bookkeeping is purely mechanical (doesn't
-  // depend on card content), so it stays in lockstep across every client
-  // for free -- only WHICH card comes up needs a single authority: the host.
-  async _drawCard() {
-    if (this.deck.needsReshuffle) {
-      await this.cardTable.playShuffleAnimation();
+  // ---------------- Decisions ----------------
+
+  // Gets the current player's next decision, one of `types`:
+  //   roll {values} | bank | hold {indices} | continue | vengeance {play}
+  // CPU seats decide locally (deterministic). Human seats always come from
+  // the log; if it's this device's player and nothing is waiting in the log,
+  // the choice is offered on screen and written to the log first.
+  async decide(types) {
+    for (;;) {
+      this._maybeReclaimSeat();
+      const p = this.currentPlayer;
+      if (this.isCpuSeat(p)) {
+        await this.pause(cpuThinkDelay());
+        return this._cpuDecide(types);
+      }
+
+      if (this.net.logLength <= this.consumed) {
+        if (this.isLocalSeat(p)) {
+          const choice = await this._askLocal(types);
+          if (choice) {
+            const ok = await this.net.submit(this.consumed, { ...choice, turn: this.turnNo, seat: p.id });
+            if (!ok && this.net.logLength <= this.consumed) {
+              this.ui.setStatus("Couldn't send that move — try again.");
+              continue;
+            }
+          }
+        } else {
+          this.awaitingSeat = p.id; // another device's move (main.js shows a waiting banner)
+        }
+      }
+
+      const ev = await this.net.waitFor(this.consumed);
+      this.consumed++;
+      this.awaitingSeat = null;
+      if (ev.type === "seat") {
+        this._applySeat(ev);
+        continue;
+      }
+      if (ev.turn === this.turnNo && ev.seat === p.id && types.includes(ev.type) && this._valid(ev)) return ev;
+      console.warn("Ignoring out-of-place move", ev);
     }
-    const localCard = this.deck.draw();
-    if (this.net.isHost) {
-      this.net.broadcast("cardDrawn", { card: localCard });
-      return localCard;
+  }
+
+  _valid(ev) {
+    switch (ev.type) {
+      case "roll":
+        return (
+          Array.isArray(ev.values) &&
+          ev.values.length === this.activeIndices.length &&
+          ev.values.every((v) => Number.isInteger(v) && v >= 1 && v <= 6)
+        );
+      case "hold": {
+        const idx = ev.indices;
+        if (!Array.isArray(idx) || idx.length === 0) return false;
+        if (new Set(idx).size !== idx.length || !idx.every((i) => this.activeIndices.includes(i))) return false;
+        return scoreSelection(idx.map((i) => this.dice3d.dice[i].value)).valid;
+      }
+      case "vengeance":
+        return typeof ev.play === "boolean";
+      default:
+        return true; // bank / continue
     }
-    // Not the draw authority: the local draw() above only mattered for pile-
-    // count bookkeeping (kept the reshuffle timing in sync) -- the actual
-    // card is whatever the host says it is.
-    const { card } = await this.net.next("cardDrawn");
-    this.deck.activeCard = card;
-    return card;
+  }
+
+  _cpuDecide(types) {
+    const p = this.currentPlayer;
+    if (types.includes("vengeance")) {
+      // Don't play it if it would also dock the CPU itself.
+      return { type: "vengeance", play: !this._vengeanceLeaders.some((l) => l.id === p.id) };
+    }
+    if (types.includes("hold")) {
+      const values = this.activeIndices.map((i) => this.dice3d.dice[i].value);
+      return { type: "hold", indices: bestSelection(values).map((li) => this.activeIndices[li]) };
+    }
+    if (types.includes("continue")) return { type: "continue" };
+    if (
+      types.includes("bank") &&
+      cpuShouldBank({
+        turnScore: this.turnScore,
+        diceRemaining: this.activeIndices.length,
+        currentTotal: p.score,
+        targetScore: this.targetScore,
+        difficulty: p.difficulty ?? "normal",
+      })
+    ) {
+      return { type: "bank" };
+    }
+    return { type: "roll", values: this.activeIndices.map(() => rollDie(this.turnRng)) };
+  }
+
+  // Offers the decision on screen. Resolves with the player's choice, or
+  // null if an entry shows up in the log first (e.g. someone handed this
+  // seat to the CPU while it looked disconnected).
+  _askLocal(types) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (choice) => {
+        if (settled) return;
+        settled = true;
+        this._ask = null;
+        this._disableControls();
+        resolve(choice);
+      };
+      this._ask = { types, finish };
+
+      if (types.includes("roll")) this.ui.setRollEnabled(true);
+      if (types.includes("bank")) this.ui.setBankEnabled(true);
+      if (types.includes("continue")) this.ui.setFillPromptEnabled(true);
+      if (types.includes("hold")) this.ui.enableDiceSelection(this.activeIndices);
+      if (types.includes("vengeance")) {
+        this.ui.promptVengeance(this._vengeanceLeaders).then((play) => {
+          if (play !== null) finish({ type: "vengeance", play });
+        });
+      }
+      this.net.waitFor(this.consumed).then(() => finish(null));
+    });
+  }
+
+  _disableControls() {
+    this.ui.setRollEnabled(false);
+    this.ui.setBankEnabled(false);
+    this.ui.setFillPromptEnabled(false);
+    this.ui.clearDiceSelectionUI();
+    this.ui.cancelVengeance?.();
+    this.selected.clear();
+  }
+
+  // ---- button handlers (main.js) ----
+
+  rollDice() {
+    const a = this._ask;
+    if (!a || !a.types.includes("roll")) return;
+    a.finish({ type: "roll", values: this.activeIndices.map(() => rollDie()) });
+  }
+
+  humanBank() {
+    const a = this._ask;
+    if (!a || !a.types.includes("bank")) return;
+    a.finish({ type: "bank" });
+  }
+
+  humanContinueAfterFill() {
+    const a = this._ask;
+    if (!a || !a.types.includes("continue")) return;
+    a.finish({ type: "continue" });
+  }
+
+  toggleSelect(index) {
+    const a = this._ask;
+    if (!a || !a.types.includes("hold")) return;
+    if (!this.activeIndices.includes(index)) return;
+    if (this.selected.has(index)) this.selected.delete(index);
+    else this.selected.add(index);
+    this.ui.setSelectedDice([...this.selected]);
+    this.updatePendingScore();
+  }
+
+  updatePendingScore() {
+    const values = [...this.selected].map((i) => this.dice3d.dice[i].value);
+    const result = scoreSelection(values);
+    this.ui.setPendingScore(result);
+    return result;
+  }
+
+  confirmHold() {
+    const a = this._ask;
+    if (!a || !a.types.includes("hold")) return;
+    const indices = [...this.selected].sort((x, y) => x - y);
+    if (indices.length === 0) return;
+    if (!scoreSelection(indices.map((i) => this.dice3d.dice[i].value)).valid) {
+      this.ui.setStatus("That selection doesn't form a valid score — pick again.");
+      return;
+    }
+    a.finish({ type: "hold", indices });
+  }
+
+  // ---- seats handed to the CPU (and back) ----
+
+  // Anyone may hand a disconnected player's seat to the CPU so the game can
+  // go on; it's handed back automatically when that player returns.
+  takeOverSeat(seat) {
+    return this.net.append({ type: "seat", seat, cpu: true });
+  }
+
+  _maybeReclaimSeat() {
+    const me = this.myPlayerId === null ? null : this.players[this.myPlayerId];
+    if (!me || !me.cpuControlled || this.fast || this._reclaimSent || me.type === "cpu") return;
+    this._reclaimSent = true;
+    this.net.append({ type: "seat", seat: me.id, cpu: false });
+  }
+
+  _applySeat(ev) {
+    const p = this.players[ev.seat];
+    if (!p || p.type === "cpu") return;
+    p.cpuControlled = !!ev.cpu;
+    if (ev.seat === this.myPlayerId) this._reclaimSent = false;
+    this.ui.renderPlayers(this.players, this.currentPlayerIndex);
+    if (!this.fast) {
+      this.ui.setStatus(ev.cpu ? `The CPU is playing for ${p.name} for now` : `${p.name} is back!`);
+    }
+  }
+
+  // Every device meets here between turns (see the class comment).
+  async syncTurnEnd() {
+    for (;;) {
+      this._maybeReclaimSeat();
+      if (this.net.logLength <= this.consumed) {
+        await this.net.submit(this.consumed, { type: "turnEnd", turn: this.turnNo });
+      }
+      const ev = await this.net.waitFor(this.consumed);
+      this.consumed++;
+      if (ev.type === "seat") {
+        this._applySeat(ev);
+        continue;
+      }
+      if (ev.type === "turnEnd" && ev.turn === this.turnNo) return;
+      console.warn("Ignoring out-of-place move", ev);
+    }
+  }
+
+  // ---------------- Cards ----------------
+
+  async drawCard() {
+    if (this.deck.needsReshuffle && !this.fast) await this.cardTable.playShuffleAnimation();
+    return this.deck.draw();
   }
 
   // Draws the turn's governing card. A VENGEANCE draw is a detour: the
-  // player may decline (or be forced to, if they're the sole leader), in
-  // which case it's discarded and a replacement is drawn -- looping until a
-  // non-VENGEANCE card lands or a VENGEANCE is actually played.
-  async drawAndApplyCard() {
-    let card = await this._drawCard();
+  // player may decline (or must, if they're the sole leader), in which case
+  // a replacement is drawn. Returns false if the card ended the turn.
+  async drawCardPhase() {
+    let card = await this.drawCard();
     for (;;) {
       this.currentCard = card;
-      await this.cardTable.draw(card, this.deck);
+      await this.cardTable.draw(card, this.deck, this.fast);
+      playCardStinger(card.id); // dramatic cards get a musical sting on reveal
 
       if (card.id !== "VENGEANCE") break;
 
       const leaders = this.computeLeaders();
       const forcedDecline = leaders.length === 1 && leaders[0].id === this.currentPlayer.id;
-      const play = forcedDecline ? false : await this.resolveVengeance(leaders);
-
+      let play = false;
+      if (!forcedDecline) {
+        this._vengeanceLeaders = leaders;
+        this.ui.setStatus(`${this.currentPlayer.name} drew Vengeance...`);
+        play = (await this.decide(["vengeance"])).play;
+      }
       if (play) {
         this.cardFlags.vengeancePending = true;
         this.cardFlags.vengeanceLeaders = leaders;
         break;
       }
-
       this.ui.setStatus(
         forcedDecline
           ? `${this.currentPlayer.name} is the sole leader — can't play Vengeance. Drawing again...`
           : `${this.currentPlayer.name} declines Vengeance. Drawing again...`
       );
-      card = await this._drawCard();
+      card = await this.drawCard();
     }
-
-    this.applyCardEffect(this.currentCard);
+    return this.applyCardEffect(this.currentCard);
   }
 
-  // Called uniformly on every client as part of the shared drawAndApplyCard
-  // flow (unlike roll/hold/bank, there's no "standing loop" for this one --
-  // every client is already here at the same logical moment).
-  async resolveVengeance(leaders) {
-    if (this.currentPlayer.type === "cpu") {
-      // A simple heuristic: don't play it if doing so would also dock the CPU.
-      // Deterministic given already-synced scores, so every client computes
-      // the same answer independently -- no network round trip needed.
-      return !leaders.some((p) => p.id === this.currentPlayer.id);
-    }
-    if (this.isAuthorityForPlayer(this.currentPlayer)) {
-      const play = await this.ui.promptVengeance(leaders);
-      this.net.broadcast("humanVengeance", { play });
-      return play;
-    }
-    // Someone else's decision to make -- wait for it.
-    const { play } = await this.net.next("humanVengeance");
-    return play;
-  }
-
-  applyCardEffect(card) {
+  async applyCardEffect(card) {
     switch (card.id) {
       case "BONUS_300":
       case "BONUS_400":
@@ -219,156 +476,65 @@ export class Game {
         this.cardFlags.doubleTroublePending = 2;
         break;
       case "NO_DICE":
-        this.forfeitTurn(
+        await this.forfeitTurn(
           this.turnScore > 0
             ? `No Dice! ${this.currentPlayer.name} loses all ${this.turnScore} points from this turn.`
             : `No Dice! ${this.currentPlayer.name}'s turn is skipped.`
         );
-        return;
+        return false;
       default:
         break;
     }
-    this.ui.setRollEnabled(true);
-    if (this.currentPlayer.type === "cpu") {
-      setTimeout(() => this.rollDice(), cpuThinkDelay());
-    }
+    this.ui.setStatus(`${this.currentPlayer.name}: roll the dice`);
+    return true;
   }
 
-  async rollDice() {
-    if (this.activeIndices.length === 0) return;
-    if (!this.isAuthorityForPlayer(this.currentPlayer)) return; // someone else rolls for this turn; the standing "diceRolled" loop applies it here once it arrives
-    this.ui.setRollEnabled(false);
-    this.ui.setBankEnabled(false);
-    this.selected.clear();
-    this.ui.clearDiceSelectionUI();
+  // ---------------- Dice ----------------
 
-    const results = await this.dice3d.rollIndices(this.activeIndices);
-    const indices = this.activeIndices;
-    const values = indices.map((i) => results[i]);
-    this.net.broadcast("diceRolled", { indices, values });
-    await this._afterRoll(indices, values);
-  }
-
-  // Applies a roll's outcome -- shared by the client that actually rolled
-  // and by every other client replaying the broadcast result.
-  async _afterRoll(indices, values) {
-    this.rollValues = values;
+  // Shows a roll and applies it. Returns false if it busted the turn.
+  async doRoll(values) {
+    const indices = [...this.activeIndices];
+    this._disableControls();
+    const forced = {};
+    indices.forEach((idx, k) => (forced[idx] = values[k]));
+    await this.dice3d.rollIndices(indices, forced, this.fast);
     this.ui.setDiceFaces(indices, values);
 
     if (!hasAnyScore(values)) {
-      if (this.cardFlags.mustBust) {
-        this.handleMustBustPayout();
-      } else {
-        this.handleBust();
-      }
-      return;
+      if (this.cardFlags.mustBust) this.handleMustBustPayout();
+      else await this.handleBust();
+      return false;
     }
-
     this.ui.setStatus(`${this.currentPlayer.name}: pick dice to hold`);
-    this.ui.enableDiceSelection(indices);
-
-    if (this.currentPlayer.type === "cpu") {
-      setTimeout(() => this.cpuTakeTurn(), cpuThinkDelay());
-    }
+    return true;
   }
 
-  // Invoked by the standing "diceRolled" network loop for every roll this
-  // client didn't itself perform: replays a real physics roll on this
-  // client's own dice3d (same gather/launch/tumble/bounce as a free roll),
-  // just forced to land on the already-known values, then applies the same
-  // downstream logic as a local roll.
-  async applyRemoteRoll(indices, values) {
-    const forced = {};
-    indices.forEach((idx, k) => (forced[idx] = values[k]));
-    await this.dice3d.rollIndices(indices, forced);
-    await this._afterRoll(indices, values);
-  }
-
-  toggleSelect(index) {
-    // CPU dice are never hand-picked (cpuTakeTurn chooses for them), and a
-    // human's dice can only be picked from their own connected client.
-    if (this.currentPlayer.type === "cpu") return;
-    if (!this.isAuthorityForPlayer(this.currentPlayer)) return;
-    if (!this.activeIndices.includes(index)) return;
-    if (this.selected.has(index)) this.selected.delete(index);
-    else this.selected.add(index);
-    this.ui.setSelectedDice([...this.selected]);
-    this.updatePendingScore();
-  }
-
-  updatePendingScore() {
-    const values = [...this.selected].map((i) => this.dice3d.dice[i].value);
-    const result = scoreSelection(values);
-    this.ui.setPendingScore(result);
-    return result;
-  }
-
-  // Only ever called from a button click on the client that owns the
-  // current turn (see toggleSelect's guard) -- broadcasts the choice so
-  // every other client's standing "humanHeld" loop can replay it, then
-  // applies it locally via the same commitHold every path funnels through.
-  confirmHold() {
-    const values = [...this.selected].map((i) => this.dice3d.dice[i].value);
-    if (values.length === 0) return;
-    const result = scoreSelection(values);
-    if (!result.valid) {
-      this.ui.setStatus("That selection doesn't form a valid score — pick again.");
-      return;
-    }
-    const indices = [...this.selected];
-    this.net.broadcast("humanHeld", { indices });
-    this.commitHold(indices, result.score);
-  }
-
-  commitHold(indices, score) {
+  commitHold(indices) {
+    const score = scoreSelection(indices.map((i) => this.dice3d.dice[i].value)).score;
     this.turnScore += score;
-    this.dice3d.holdDice(indices);
+    this.dice3d.holdDice(indices, this.fast);
     this.activeIndices = this.activeIndices.filter((i) => !indices.includes(i));
     this.selected.clear();
     this.ui.clearDiceSelectionUI();
     this.ui.setTurnScore(this.turnScore);
     this.ui.setHeld(this.dice3d.dice.filter((d) => d.state === "tray").map((d) => d.value));
     this.ui.syncDiceState(this.dice3d.dice);
-
-    if (this.activeIndices.length === 0) {
-      this.handleFill();
-      return;
-    }
-
-    const canBank = !this.bankBlocked();
-    this.ui.setRollEnabled(true);
-    this.ui.setBankEnabled(canBank);
-    this.ui.setStatus(
-      canBank
-        ? `${this.currentPlayer.name}: roll again or bank`
-        : `${this.currentPlayer.name}: must keep rolling`
-    );
-
-    if (this.currentPlayer.type === "cpu") {
-      const bank =
-        canBank &&
-        cpuShouldBank({
-          turnScore: this.turnScore,
-          diceRemaining: this.activeIndices.length,
-          currentTotal: this.currentPlayer.score,
-          targetScore: this.targetScore,
-          difficulty: this.currentPlayer.difficulty,
-        });
-      setTimeout(() => (bank ? this.bank() : this.rollDice()), cpuThinkDelay());
+    if (this.activeIndices.length > 0) {
+      this.ui.setStatus(
+        this.bankBlocked()
+          ? `${this.currentPlayer.name}: must keep rolling`
+          : `${this.currentPlayer.name}: roll again or bank`
+      );
     }
   }
 
-  // A FILL means every die scored across this roll sequence. Resolve any
-  // card conditions that key off a FILL, then either let the player choose
-  // to continue or bank (normal case), or force a continuation with no real
-  // choice to make (Must Bust / Double Trouble mid-sequence).
-  async handleFill() {
-    this.hasFilledThisTurn = true;
+  // A FILL means every die scored across this roll sequence. Resolves any
+  // card conditions that key off a FILL.
+  handleFill() {
     sfx("chipsHandle", { vol: 0.9 });
 
     // Credit a BONUS card's points as soon as the FILL that earns them
-    // happens, not just at bank time -- so the Turn Score display reflects
-    // it immediately even if the player keeps rolling afterward.
+    // happens, not just at bank time.
     if (this.cardFlags.bonusValue && !this.cardFlags.bonusCredited) {
       this.turnScore += this.cardFlags.bonusValue;
       this.cardFlags.bonusCredited = true;
@@ -400,82 +566,32 @@ export class Game {
     }
 
     this.ui.setTurnScore(this.turnScore);
-    this.ui.setRollEnabled(false);
-
-    if (this.bankBlocked()) {
-      this.ui.setBankEnabled(false);
-      this.ui.setStatus(`${this.currentPlayer.name}: FILL! Must keep rolling...`);
-      setTimeout(() => this.continueAfterFill(), 900);
-      return;
-    }
-
-    this.ui.setBankEnabled(true);
-    this.ui.setStatus(`${this.currentPlayer.name}: FILL! Draw again or bank`);
-    this.ui.setFillPromptEnabled(true);
-
-    if (this.currentPlayer.type === "cpu") {
-      setTimeout(() => this.continueAfterFill(), cpuThinkDelay());
-    }
+    this.ui.setStatus(
+      this.bankBlocked()
+        ? `${this.currentPlayer.name}: FILL! Must keep rolling...`
+        : `${this.currentPlayer.name}: FILL! Draw again or bank`
+    );
   }
 
-  async continueAfterFill() {
-    this.ui.setFillPromptEnabled(false);
+  resetForContinue() {
     this.activeIndices = [0, 1, 2, 3, 4, 5];
     this.dice3d.resetAll();
     this.ui.setHeld([]);
     this.ui.syncDiceState(this.dice3d.dice);
     this.ui.resetDiceFaces();
-
-    if (this.cardFlags.mustBust) {
-      // "You do not draw another card after each FILL when playing Must Bust."
-      this.ui.setRollEnabled(true);
-      if (this.currentPlayer.type === "cpu") {
-        setTimeout(() => this.rollDice(), cpuThinkDelay());
-      }
-      return;
-    }
-
-    await this.drawAndApplyCard();
   }
 
-  // Only ever called from the "Draw & Roll Again" button on the client that
-  // owns the current turn -- broadcasts the choice for the standing
-  // "humanContinue" loop on every other client, then applies it locally.
-  // CPU turns and forced (no-real-choice) continuations call the plain
-  // continueAfterFill() directly instead, since there's no decision to relay.
-  humanContinueAfterFill() {
-    this.net.broadcast("humanContinue", {});
-    this.continueAfterFill();
-  }
-
-  cpuTakeTurn() {
-    const values = this.activeIndices.map((i) => this.dice3d.dice[i].value);
-    const bestLocal = bestSelection(values);
-    const indices = bestLocal.map((li) => this.activeIndices[li]);
-    const heldValues = indices.map((i) => this.dice3d.dice[i].value);
-    const result = scoreSelection(heldValues);
-    if (!result.valid || indices.length === 0) {
-      if (this.cardFlags.mustBust) {
-        this.handleMustBustPayout();
-      } else {
-        this.handleBust();
-      }
-      return;
-    }
-    this.commitHold(indices, result.score);
-  }
+  // ---------------- Turn endings ----------------
 
   async handleBust() {
     this.ui.setStatus(`${this.currentPlayer.name} BUSTED! Lost ${this.turnScore} points.`);
     this.turnScore = 0;
     playBust();
-    await this.ui.showBustStamp();
-    this.endTurn({ busted: true });
+    if (!this.fast) await this.ui.showBustStamp();
   }
 
   // Must Bust inverts the usual bust penalty: whatever was earned this turn
-  // (any BONUS card was already credited into turnScore at FILL time) is
-  // paid out instead of lost.
+  // is paid out instead of lost.
   handleMustBustPayout() {
     const score = this.turnScore;
     playBank(score);
@@ -483,57 +599,22 @@ export class Game {
     this.turnScore = 0;
     this.ui.setStatus(`${this.currentPlayer.name} busts, but Must Bust protects the ${score} points earned!`);
     this.ui.renderPlayers(this.players, this.currentPlayerIndex);
-    this.endTurn({ busted: false });
   }
 
-  // Used for NO_DICE: forfeits any unbanked turn points (points already on
-  // the scoresheet from an earlier FILL/Vengeance/Double Trouble payout this
-  // turn are unaffected) and ends the turn immediately.
+  // NO_DICE: forfeits any unbanked turn points (points already on the
+  // scoresheet from an earlier payout this turn are unaffected).
   async forfeitTurn(message) {
     this.ui.setStatus(message);
     this.turnScore = 0;
-    await this.ui.showNoDiceStamp();
-    this.endTurn({ busted: true });
+    if (!this.fast) await this.ui.showNoDiceStamp();
   }
 
   bank() {
-    // Any BONUS card was already credited into turnScore at FILL time.
     playBank(this.turnScore);
     this.currentPlayer.score += this.turnScore;
     this.turnScore = 0;
+    this.ui.setTurnScore(0);
     this.ui.renderPlayers(this.players, this.currentPlayerIndex);
-    this.endTurn({ busted: false });
-  }
-
-  // Only ever called from the Bank Points button on the client that owns the
-  // current turn -- broadcasts the choice for the standing "humanBank" loop
-  // on every other client, then applies it locally via the same bank()
-  // CPU turns call directly (their bank-or-continue decision is deterministic,
-  // so it needs no network relay).
-  humanBank() {
-    this.net.broadcast("humanBank", {});
-    this.bank();
-  }
-
-  endTurn({ busted, skipped }) {
-    this.ui.setRollEnabled(false);
-    this.ui.setBankEnabled(false);
-    this.ui.setFillPromptEnabled(false);
-    this.ui.clearDiceSelectionUI();
-
-    if (!this.finalRoundTriggered && this.currentPlayer.score >= this.targetScore) {
-      this.finalRoundTriggered = true;
-      this.finalRoundStarter = this.currentPlayerIndex;
-    }
-
-    const nextIndex = (this.currentPlayerIndex + 1) % this.players.length;
-    if (this.finalRoundTriggered && nextIndex === this.finalRoundStarter) {
-      this.finishGame();
-      return;
-    }
-
-    this.currentPlayerIndex = nextIndex;
-    setTimeout(() => this.startTurn(), 900);
   }
 
   finishGame() {

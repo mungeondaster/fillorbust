@@ -469,6 +469,41 @@ button:not(:disabled):active { transform: translateY(0); }
   text-shadow: 0 3px 10px rgba(0,0,0,0.5);
 }
 .banner-sub { opacity: 0.85; margin: 2px 0 12px; }
+#waitBanner { padding: 12px 16px; }
+#waitBanner .banner-sub { margin: 0; opacity: 1; }
+#waitBanner .banner-actions:has(button:not(.hidden)) { margin-top: 10px; }
+
+/* Online: a dropped connection, and the "rejoin your game" offer on the menu. */
+.net-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #2a1e08;
+  background: #f0b45a;
+  animation: netPulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes netPulse { to { opacity: 0.55; } }
+.rejoin-box {
+  margin: -8px 0 20px;
+  padding: 12px 14px;
+  text-align: center;
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  background: rgba(212, 175, 55, 0.1);
+}
+.rejoin-actions { display: flex; gap: 10px; justify-content: center; align-items: center; margin-top: 10px; }
+.rejoin-actions button { margin: 0; }
+.p-tag {
+  font-size: 0.68rem;
+  font-weight: 600;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  vertical-align: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.p-tag.off { background: rgba(181, 38, 31, 0.55); }
 .banner-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
 .bust-stamp {
@@ -676,9 +711,10 @@ button:not(:disabled):active { transform: translateY(0); }
   box-shadow: 0 3px 6px rgba(0,0,0,0.35);
 }
 .card-layer.back {
-  background:
-    repeating-linear-gradient(45deg, #7a1f2b, #7a1f2b 6px, #8f2534 6px, #8f2534 12px);
-  border: 2px solid var(--gold);
+  background: #d8203a;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 6px;
+  overflow: hidden;
 }
 .card-layer.discard-face {
   background: linear-gradient(160deg, var(--cream), #e8dfc8);
@@ -737,8 +773,10 @@ button:not(:disabled):active { transform: translateY(0); }
   text-align: center;
 }
 .card-back {
-  background:
-    repeating-linear-gradient(45deg, #7a1f2b, #7a1f2b 6px, #8f2534 6px, #8f2534 12px);
+  background: #d8203a;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  overflow: hidden;
 }
 .card-front {
   background: linear-gradient(160deg, var(--cream), #e8dfc8);
@@ -746,6 +784,17 @@ button:not(:disabled):active { transform: translateY(0); }
   transform: rotateY(180deg);
   cursor: default;
 }
+/* Printed card faces (js/cardArt.js) run edge to edge, like the real deck. */
+.card-art { display: block; width: 100%; height: 100%; }
+.card-front:has(.card-art),
+.card-layer-labeled:has(.card-art) {
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  background: #111;
+  overflow: hidden;
+}
+.card-layer-labeled:has(.card-art) { border-radius: 6px; }
+
 .card-title {
   font-family: "Cinzel", serif;
   font-weight: 700;
@@ -853,6 +902,8 @@ button:not(:disabled):active { transform: translateY(0); }
   #statusBar { grid-template-columns: auto 1fr auto; padding: 6px 8px; gap: 8px; }
   #statusText { font-size: 0.85rem; }
   .status-tools select { max-width: 118px; font-size: 0.72rem; padding: 5px 4px; }
+  .net-badge { font-size: 0; padding: 4px 7px; }
+  .net-badge::before { content: "Offline"; font-size: 0.66rem; }
   #mainMenuBtn { padding: 5px 9px; }
 
   #gameLayout {
@@ -906,4 +957,117 @@ button:not(:disabled):active { transform: translateY(0); }
 @media (max-height: 520px) {
   #gameScreen { height: auto; min-height: 100dvh; overflow: visible; }
   #diceStage { min-height: 300px; }
+}
+
+/* ---------------- Title screen: logo, card fan, falling cards ---------------- */
+
+/* Cards drifting down behind the menu (js/fallingCards.js). */
+#setupScreen { position: relative; overflow: hidden; }
+#setupScreen > .setup-card { position: relative; z-index: 1; }
+.falling-cards {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  perspective: 900px;
+  overflow: hidden;
+}
+.fall-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.fall-card > .side {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  backface-visibility: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+}
+.fall-card > .side.back { transform: rotateY(180deg); }
+.fall-card svg { display: block; width: 100%; height: 100%; }
+
+.title-card { padding-top: 26px; }
+.title-logo {
+  position: relative;
+  margin: 0 -26px 26px;
+  padding-top: 84px; /* room for the fanned cards peeking over the top */
+  font-size: 0; /* the SVG carries the lettering */
+}
+.logo-wrap { position: relative; z-index: 1; display: block; filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.6)); }
+.logo-art { display: block; width: 100%; height: auto; }
+.logo-fallback { font: 400 3rem "Anton", Impact, sans-serif; color: #d8203a; } /* replaced by the SVG */
+.logo-fan {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+.fan-card {
+  position: absolute;
+  left: -44px;
+  top: 0;
+  width: 88px;
+  height: 123px;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 2px solid #fff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.55);
+  transform-origin: 50% 230%;
+  transform: rotate(calc(var(--i) * 17deg));
+  animation: fanOut 0.7s cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+  animation-delay: calc((var(--i) + 2) * 60ms);
+}
+.fan-card svg { display: block; width: 100%; height: 100%; }
+@keyframes fanOut {
+  from { transform: rotate(0deg) translateY(40px); opacity: 0; }
+}
+
+.menu-sound-btn {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  font-size: 1.1rem;
+}
+
+/* Sound popover (js/soundPanel.js) */
+.sound-panel {
+  position: fixed;
+  z-index: 60;
+  width: 230px;
+  padding: 14px 16px 12px;
+  border-radius: 12px;
+  background: rgba(10, 34, 22, 0.97);
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  box-shadow: var(--shadow-lg);
+  color: var(--cream);
+}
+.vol-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-weight: 600;
+  color: var(--gold-light);
+  font-size: 0.9rem;
+}
+.vol-row input[type="range"] { width: 100%; accent-color: var(--gold); }
+.sound-panel.muted .vol-row { opacity: 0.45; }
+.vol-mute { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; }
+.vol-mute input { accent-color: var(--gold); width: 16px; height: 16px; }
+
+@media (max-width: 520px) {
+  #setupScreen, #lobbyScreen { padding: 14px 10px; }
+  .setup-card { padding: 22px 16px; }
+  .player-row { grid-template-columns: 1fr 76px 76px 24px; gap: 5px; }
+  .player-row select { padding: 8px 4px; }
+  .title-logo { margin: 0 -12px 20px; padding-top: 62px; }
+  .fan-card { width: 64px; height: 90px; left: -32px; }
 }

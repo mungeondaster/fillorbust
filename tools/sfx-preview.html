@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card Stingers</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --gold: #d4af37; --gold-light: #f0d878; --cream: #fdfaf3; }
+  body {
+    margin: 0; min-height: 100vh; font-family: Fredoka, sans-serif; color: var(--cream);
+    background: radial-gradient(ellipse at top, #14603c 0%, #0f5132 45%, #0a3a24 100%);
+    display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;
+  }
+  .card { background: rgba(10,22,16,0.72); border: 1px solid rgba(212,175,55,0.35); border-radius: 18px; padding: 28px 32px; width: min(560px, 100%); }
+  h1 { font-family: Cinzel, serif; color: var(--gold-light); margin: 0 0 4px; text-align: center; }
+  p { text-align: center; opacity: 0.75; margin: 0 0 22px; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: center; padding: 12px 0; border-top: 1px solid rgba(255,255,255,0.08); }
+  .name { font-family: Cinzel, serif; font-weight: 700; color: var(--gold-light); }
+  .mood { font-size: 0.85rem; opacity: 0.75; grid-column: 1; }
+  button {
+    grid-row: 1 / span 2; grid-column: 2; font: 600 1rem Fredoka, sans-serif; border: none; border-radius: 10px;
+    padding: 11px 20px; cursor: pointer; color: #2a1e08; background: linear-gradient(180deg, var(--gold-light), var(--gold));
+  }
+  button:active { transform: translateY(1px); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Card Stingers</h1>
+  <p>Click to listen. These play when the card is revealed in a game.</p>
+  <div id="list"></div>
+</div>
+<script type="module">
+  import { unlockAudio, preloadSounds } from "../js/sound.js?v=45";
+  import { playCardStinger } from "../js/stingers.js?v=45";
+  const ITEMS = [
+    ["NO_DICE", "No Dice!", "Fail trombone (Universfield)"],
+    ["VENGEANCE", "Vengeance", "Marimba win (Floraphonic)"],
+    ["MUST_BUST", "Must Bust", "Cartoon game upgrade (Cartoon Music)"],
+  ];
+  preloadSounds();
+  const list = document.getElementById("list");
+  for (const [id, name, mood] of ITEMS) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<div class="name">${name}</div><div class="mood">${mood}</div><button type="button">▶ Play</button>`;
+    row.querySelector("button").addEventListener("click", () => {
+      // The first click creates the audio context and decodes the clips, so
+      // give that a moment; after that, play right away.
+      const first = !window.__unlocked;
+      window.__unlocked = true;
+      unlockAudio();
+      setTimeout(() => playCardStinger(id), first ? 500 : 30);
+    });
+    list.appendChild(row);
+  }
+</script>
+</body>
+</html>

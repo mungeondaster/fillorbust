@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card Faces</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; padding: 24px; background: #1b1b1d; display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; }
+  .c { width: 200px; height: 280px; border-radius: 12px; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,0.6); }
+  .c svg { display: block; width: 100%; height: 100%; }
+  .s { width: 64px; height: 90px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<script type="importmap">{ "imports": { "three": "../js/vendor/three.module.min.js" } }</script>
+<script type="module">
+  import { cardFaceSVG } from "../js/cardArt.js?v=45";
+  await document.fonts.load("40px Anton");
+  const ids = ["BACK", "NO_DICE", "MUST_BUST", "DOUBLE_TROUBLE", "FILL_1000", "BONUS_500", "VENGEANCE", "BONUS_300", "BONUS_400"];
+  // The box cover, flat and upright, as painted onto the 3D card box.
+  const { paintBoxCover } = await import("../js/scenes/kitchen.js?v=45");
+  const cv = document.createElement("canvas");
+  cv.width = 630; cv.height = 885;
+  cv.style.cssText = "width:240px;height:337px;border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,.6)";
+  paintBoxCover(cv.getContext("2d"), 630, 885);
+  document.body.appendChild(cv);
+  for (const cls of ["c", "c s"]) {
+    for (const id of ids) {
+      const d = document.createElement("div");
+      d.className = cls;
+      d.innerHTML = cardFaceSVG({ id });
+      document.body.appendChild(d);
+    }
+  }
+</script>
+</body>
+</html>

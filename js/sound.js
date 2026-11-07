@@ -11,10 +11,20 @@ let ctx = null;
 let master = null;
 let noiseBuf = null;
 let muted = false;
-try { muted = localStorage.getItem("fob.muted") === "1"; } catch {}
+let sfxVol = 0.9;    // effects volume, 0..1
+let musicVol = 0.35; // background music volume, 0..1
+try {
+  muted = localStorage.getItem("fob.muted") === "1";
+  const sv = parseFloat(localStorage.getItem("fob.sfxVol"));
+  const mv = parseFloat(localStorage.getItem("fob.musicVol"));
+  if (sv >= 0 && sv <= 1) sfxVol = sv;
+  if (mv >= 0 && mv <= 1) musicVol = mv;
+} catch {}
+let musicGain = null;
+let musicEl = null;
 
-const BASE = "assets/sounds/";
-const V = "?v=33";
+const BASE = new URL("../assets/sounds/", import.meta.url).href; // works from any page
+const V = "?v=45";
 
 // Sample groups; a random member is picked each time (never the same one
 // twice in a row) so repeated sounds don't read as a loop.
@@ -32,6 +42,10 @@ const GROUPS = {
   chipLay: ["chip-lay-1", "chip-lay-2"],
   chipStack: ["chips-stack-1", "chips-stack-2", "chips-stack-4", "chips-stack-5", "chips-stack-6"],
   chipsHandle: ["chips-handle-1", "chips-handle-5", "chips-handle-6"],
+  // Card stingers (Pixabay, free license; converted by tools/blender/convert_stingers.py).
+  stingerNoDice: ["stinger-no-dice"],
+  stingerMustBust: ["stinger-must-bust"],
+  stingerVengeance: ["stinger-vengeance"],
 };
 
 const buffers = new Map();     // name -> AudioBuffer
@@ -46,7 +60,7 @@ function ensure() {
   if (!AC) return null;
   ctx = new AC();
   master = ctx.createGain();
-  master.gain.value = muted ? 0 : 0.9;
+  master.gain.value = muted ? 0 : sfxVol;
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -12;
   comp.ratio.value = 5;
@@ -54,6 +68,10 @@ function ensure() {
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  // Music bypasses the compressor (it would pump against the dice).
+  musicGain = ctx.createGain();
+  musicGain.gain.value = 0;
+  musicGain.connect(ctx.destination);
   decodeAll();
   return ctx;
 }
@@ -83,22 +101,75 @@ function decodeAll() {
 // Browsers only allow audio after a user gesture; call this from one.
 export function unlockAudio() {
   const c = ensure();
-  if (c && c.state === "suspended") c.resume();
+  if (c && c.state === "suspended") c.resume().then(syncMusic, () => {});
+  syncMusic();
 }
 
 export function isMuted() { return muted; }
 export function setMuted(m) {
   muted = m;
   try { localStorage.setItem("fob.muted", m ? "1" : "0"); } catch {}
-  if (master) master.gain.value = m ? 0 : 0.9;
+  applyLevels();
 }
+export function getVolumes() { return { music: musicVol, sfx: sfxVol }; }
+export function setMusicVolume(v) {
+  musicVol = Math.min(1, Math.max(0, v));
+  try { localStorage.setItem("fob.musicVol", String(musicVol)); } catch {}
+  applyLevels();
+}
+export function setSfxVolume(v) {
+  sfxVol = Math.min(1, Math.max(0, v));
+  try { localStorage.setItem("fob.sfxVol", String(sfxVol)); } catch {}
+  applyLevels();
+}
+
+function applyLevels() {
+  if (master) master.gain.setTargetAtTime(muted ? 0 : sfxVol, ctx.currentTime, 0.03);
+  syncMusic();
+}
+
+// ---- background music ------------------------------------------------------
+// One long loop, streamed (not decoded into memory) through an <audio>
+// element routed into Web Audio -- so its volume works on iPhones too, where
+// an <audio> element's own volume is read-only. Paused while muted, at zero
+// volume, or while the tab is in the background.
+
+function musicLevel() {
+  // Squared, so the middle of the slider sounds like "half as loud".
+  return muted ? 0 : musicVol * musicVol;
+}
+
+function syncMusic() {
+  if (!ctx || ctx.state !== "running") return;
+  const level = musicLevel();
+  const want = level > 0 && !document.hidden;
+  if (want && !musicEl) {
+    musicEl = new Audio(BASE + "music-loop.mp3" + V);
+    musicEl.loop = true;
+    musicEl.preload = "auto";
+    ctx.createMediaElementSource(musicEl).connect(musicGain);
+  }
+  if (!musicEl) return;
+  musicGain.gain.setTargetAtTime(level, ctx.currentTime, 0.08);
+  if (want && musicEl.paused) musicEl.play().catch(() => {});
+  else if (!want && !musicEl.paused) musicEl.pause();
+}
+
+document.addEventListener("visibilitychange", syncMusic);
 
 export function audioNow() {
   return ctx ? ctx.currentTime : 0;
 }
 
+// Optional gate (set by Game): while a device is fast-forwarding through
+// moves it missed, everything is silent.
+let gate = null;
+export function setSoundGate(fn) {
+  gate = fn;
+}
+
 function ready() {
-  return ctx && !muted && ctx.state === "running";
+  return ctx && !muted && ctx.state === "running" && (!gate || gate());
 }
 
 function pick(group) {

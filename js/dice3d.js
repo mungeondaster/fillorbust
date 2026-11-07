@@ -11,10 +11,10 @@
 // Physics is a recorded cannon-es pre-simulation (see physics.js); this file
 // plays it back, plus sound. Scenery comes from js/scenes/*.
 import * as THREE from "./vendor/three.module.min.js";
-import { simulateRoll, PHYS, FACE_NORMALS } from "./physics.js?v=33";
-import { playImpact, sfx } from "./sound.js?v=33";
-import { SCENES, getSceneId, saveSceneId } from "./scenes/index.js?v=33";
-import { pipTextures, roundedBoxGeometry } from "./scenes/common.js?v=33";
+import { simulateRoll, PHYS, FACE_NORMALS } from "./physics.js?v=45";
+import { playImpact, sfx } from "./sound.js?v=45";
+import { SCENES, getSceneId, saveSceneId } from "./scenes/index.js?v=45";
+import { pipTextures, roundedBoxGeometry } from "./scenes/common.js?v=45";
 
 const HALF = 0.5;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -160,6 +160,7 @@ export class Dice3D {
     this._ro = new ResizeObserver(() => this.resize());
     this._ro.observe(container);
     window.addEventListener("resize", () => this.resize());
+    document.addEventListener("visibilitychange", () => this._onVisibility());
 
     this.resize();
     this.sceneId = null;
@@ -329,14 +330,25 @@ export class Dice3D {
     });
   }
 
-  holdDice(indices) {
+  // instant: jump straight there (used while catching up on missed moves).
+  holdDice(indices, instant = false) {
     for (const i of indices) this.dice[i].state = "tray";
     sfx("grab", { vol: 0.35, rate: 1.1 });
     let k = 0;
     for (const die of this.dice) {
       if (die.state !== "tray") continue;
       const [x, z] = TRAY_SLOTS[k++];
-      this._tween(die, new THREE.Vector3(x, HALF, z), this._flatQuat(die), 0.45, 0.6);
+      if (instant) {
+        die.tween = null;
+        die.mesh.quaternion.copy(this._flatQuat(die));
+        die.mesh.position.set(x, HALF, z);
+      } else {
+        this._tween(die, new THREE.Vector3(x, HALF, z), this._flatQuat(die), 0.45, 0.6);
+      }
+    }
+    if (instant) {
+      this._renderFrames = Math.max(this._renderFrames, 2);
+      this._kick();
     }
   }
 
@@ -364,7 +376,9 @@ export class Dice3D {
   // landed. With forcedValues ({ index: value }, from another player's roll)
   // the same kind of fully-simulated throw is shown, relabeled so the
   // authoritative values come up.
-  async rollIndices(indices, forcedValues) {
+  // instant: skip the throw and put the dice straight where it lands (used
+  // while catching up on missed moves).
+  async rollIndices(indices, forcedValues, instant = false) {
     for (const ring of this.rings) ring.visible = false;
     const sim = simulateRoll(indices.length);
     const f0 = sim.frames[0];
@@ -378,6 +392,26 @@ export class Dice3D {
       const R = new THREE.Quaternion().setFromUnitVectors(NORMAL_FOR_VALUE[want], NORMAL_FOR_VALUE[natural]);
       return { i, k, want, R };
     });
+
+    if (instant) {
+      this.playback = null;
+      const fl = sim.frames[sim.frames.length - 1];
+      const results = {};
+      for (const { i, k, want, R } of plan) {
+        const die = this.dice[i];
+        const o = k * S;
+        die.tween = null;
+        die.snap = null;
+        die.mesh.position.set(fl[o], HALF, fl[o + 2]);
+        die.mesh.quaternion.set(fl[o + 3], fl[o + 4], fl[o + 5], fl[o + 6]).multiply(R);
+        die.mesh.quaternion.copy(this._flatQuat(die));
+        die.value = want;
+        results[i] = want;
+      }
+      this._renderFrames = Math.max(this._renderFrames, 2);
+      this._kick();
+      return results;
+    }
 
     // Scoop the dice into the throwing hand (the sim's start pose).
     sfx("grab", { vol: 0.75 });
@@ -441,14 +475,57 @@ export class Dice3D {
   // Render only while something is moving: an idle table costs no GPU/
   // battery at all, which matters over a long family game on phones.
   _kick() {
+    // A hidden tab gets no animation frames at all, which would freeze a
+    // roll halfway (and with it the game, for everyone waiting on this
+    // player). So while hidden, everything in motion just finishes at once.
+    if (document.hidden) {
+      if (!this._flushQueued) {
+        this._flushQueued = true;
+        setTimeout(() => {
+          this._flushQueued = false;
+          this._flush();
+        }, 0);
+      }
+      return;
+    }
     if (this._running) return;
     this._running = true;
     this._clock.getDelta();
     requestAnimationFrame(this._tick);
   }
 
+  _flush() {
+    for (let n = 0; n < 50 && this._advance(1); n++);
+    this._renderFrames = Math.max(this._renderFrames, 2);
+  }
+
+  _onVisibility() {
+    if (document.hidden) {
+      this._flush();
+    } else {
+      this._renderFrames = Math.max(this._renderFrames, 2);
+      this._kick(); // (a frame requested before hiding is simply delivered now)
+    }
+  }
+
   _tick() {
     const dt = Math.min(this._clock.getDelta(), 0.05);
+    const busy = this._advance(dt) | this._render();
+    if (busy) requestAnimationFrame(this._tick);
+    else this._running = false;
+  }
+
+  _render() {
+    this.renderer.render(this.scene, this.camera);
+    if (this._renderFrames > 0) {
+      this._renderFrames--;
+      return true;
+    }
+    return false;
+  }
+
+  // Moves everything in motion forward by dt seconds; true while anything is.
+  _advance(dt) {
     let busy = false;
 
     if (this.playback) {
@@ -483,13 +560,6 @@ export class Dice3D {
         busy = true;
       }
     }
-
-    this.renderer.render(this.scene, this.camera);
-    if (this._renderFrames > 0) {
-      this._renderFrames--;
-      busy = true;
-    }
-    if (busy) requestAnimationFrame(this._tick);
-    else this._running = false;
+    return busy;
   }
 }

@@ -5,15 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fill or Bust</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Cinzel:wght@600;700&family=Rubik+Mono+One&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=33">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Cinzel:wght@600;700&family=Rubik+Mono+One&family=Anton&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=45">
 </head>
 <body>
 
 <div id="setupScreen" class="screen">
-  <div class="setup-card">
-    <h1>FILL <span class="or">or</span> BUST</h1>
-    <p class="subtitle">A dice &amp; card push-your-luck game</p>
+  <button id="menuSoundBtn" class="secondary-btn small icon-btn menu-sound-btn" type="button" aria-label="Sound and music">🔊</button>
+  <div class="setup-card title-card">
+    <h1 class="title-logo">
+      <span class="logo-fan" id="logoFan" aria-hidden="true"></span>
+      <span class="logo-wrap" id="logoArt"><span class="logo-fallback">FILL OR BUST!</span></span>
+    </h1>
+
+    <div id="rejoinBox" class="rejoin-box hidden">
+      <div>You were in an online game in room <b id="rejoinCode"></b>.</div>
+      <div class="rejoin-actions">
+        <button id="rejoinBtn" class="primary-btn" type="button">Rejoin Game</button>
+        <button id="rejoinDismissBtn" class="secondary-btn small" type="button">Not now</button>
+      </div>
+      <p class="form-error hidden"></p>
+    </div>
 
     <div id="modeTabs" class="mode-tabs hidden">
       <button id="localModeBtn" class="mode-tab active" type="button">Local Game</button>
@@ -91,6 +103,7 @@
     </div>
 
     <p id="lobbyWaitingMsg" class="subtitle hidden">Waiting for the host to start the game&hellip;</p>
+    <p id="lobbyError" class="subtitle hidden" role="alert" style="color:#ff9a8a"></p>
 
     <button id="lobbyLeaveBtn" class="secondary-btn">Leave Room</button>
   </div>
@@ -101,6 +114,7 @@
     <button id="mainMenuBtn" class="secondary-btn small" title="Return to Main Menu">Main Menu</button>
     <span id="statusText">Ready</span>
     <div class="status-tools">
+      <span id="netBadge" class="net-badge hidden" role="status">Reconnecting…</span>
       <select id="sceneSel" title="Table scene" aria-label="Table scene"></select>
       <button id="muteBtn" class="secondary-btn small icon-btn" type="button" aria-label="Toggle sound">🔊</button>
     </div>
@@ -152,6 +166,12 @@
           <div class="banner-actions">
             <button id="continueFillBtn" class="primary-btn">Draw &amp; Roll Again</button>
             <button id="bankFillBtn" class="bank-btn">Bank Now</button>
+          </div>
+        </div>
+        <div id="waitBanner" class="stage-banner hidden" role="status">
+          <div class="banner-sub" id="waitText"></div>
+          <div class="banner-actions">
+            <button id="takeOverBtn" class="secondary-btn hidden" type="button"></button>
           </div>
         </div>
         <div id="bustStamp" class="bust-stamp hidden">BUST</div>
@@ -215,9 +235,20 @@
   </div>
 </div>
 
+<div id="leaveModal" class="modal hidden">
+  <div class="modal-card">
+    <h2>Leave this game?</h2>
+    <p>Return to the Main Menu? Your current game will be lost.</p>
+    <div class="modal-actions">
+      <button id="leaveConfirmBtn" class="bank-btn">Main Menu</button>
+      <button id="leaveCancelBtn" class="secondary-btn">Keep Playing</button>
+    </div>
+  </div>
+</div>
+
 <script type="importmap">
 { "imports": { "three": "./js/vendor/three.module.min.js" } }
 </script>
-<script type="module" src="js/main.js?v=33"></script>
+<script type="module" src="js/main.js?v=45"></script>
 </body>
 </html>

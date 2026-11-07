@@ -1,21 +1,27 @@
 // The only module that talks to Firebase. Everything else (game.js, main.js)
-// goes through this thin wrapper: room create/join, presence, and a small
-// event stream that Game uses to stay in lockstep with other players.
+// goes through this thin wrapper: room create/join/rejoin, presence, and the
+// move log Game replays.
 //
-// Design note: every client runs its own full Game/Dice3D/CardTable instance
-// (see js/game.js). What travels over the network is only the unpredictable
-// inputs -- dice roll outcomes, card draws, and human free-choice decisions
-// (hold selection, bank-vs-continue, Vengeance accept/decline). Everything
-// else (rules, CPU decisions, scoring) is a deterministic function of already-
-// synced state, so it's computed identically and locally by every client
-// without any network traffic.
+// Design: every client runs its own full Game (see js/game.js) as a pure
+// function of (a) the game's start settings -- players, target score and a
+// random seed, written once to /rooms/{code}/meta/game -- and (b) an ordered
+// log of human decisions at /rooms/{code}/events/e000000, e000001, ...
+//
+// The seed makes the card deck and every CPU dice roll identical on every
+// device, so no client is "in charge" of anything: the host can leave and the
+// game carries on. Each log slot can only ever be written once (a Firebase
+// transaction that refuses to overwrite), so even when two devices try to
+// write at the same moment, everyone ends up reading the same sequence.
+//
+// That also makes rejoining simple: a refreshed or reconnected device just
+// reads the log from the start, fast-forwarding (no animation or sound) until
+// it reaches the present.
 
 import { firebaseConfig } from "./firebaseConfig.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import {
   getDatabase,
   ref,
-  push,
   set,
   update,
   get,
@@ -24,7 +30,13 @@ import {
   onChildAdded,
   onDisconnect,
   serverTimestamp,
+  runTransaction,
+  query,
+  orderByKey,
+  startAfter,
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
+
+import { EventLog, saveSession, clearSavedSession } from "./movelog.js?v=45";
 
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I
 
@@ -40,8 +52,11 @@ function randomId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export class NetSession {
+const slotKey = (i) => "e" + String(i).padStart(6, "0");
+
+export class NetSession extends EventLog {
   constructor() {
+    super();
     // A placeholder config doesn't fail fast -- Firebase's SDK just retries
     // the (nonexistent) connection forever, which looks like a hang rather
     // than an error. Catch the obvious "forgot to configure it" case here so
@@ -51,24 +66,17 @@ export class NetSession {
     }
     this.app = initializeApp(firebaseConfig);
     this.db = getDatabase(this.app);
+    this.online = true;
     this.roomCode = null;
-    this.myPlayerId = null; // Firebase id (string) -- lobby/presence only, NOT the
-    // same as Game's numeric player index. main.js maps between the two once
-    // when building the finalized player list at game-start time.
-    this.isHost = false;
+    this.myPlayerId = null; // Firebase id (string) -- NOT Game's numeric seat index.
+    this.isHost = false; // only matters in the lobby now
     this.connId = randomId();
-
-    // Event stream: an append-only list at /rooms/{code}/events, subscribed
-    // once via onChildAdded. Events this client itself broadcast are
-    // filtered out here (by connId) so they're never "replayed" back to the
-    // sender -- the sender already applied its own action locally.
-    // `next(type)` resolves with the next occurrence of that type, queuing
-    // arrivals that show up before anyone's asked for them yet (important:
-    // a fast client can otherwise broadcast and move on before a slower
-    // client has reached the point of awaiting it).
-    this._queues = new Map(); // type -> payload[]
-    this._waiters = new Map(); // type -> resolve[]
+    this.connected = false;
+    this._connCbs = [];
+    this._logOpened = null;
   }
+
+  // ---- rooms ----
 
   async createRoom(hostName) {
     const code = randomRoomCode();
@@ -83,17 +91,29 @@ export class NetSession {
         [playerId]: { name: hostName, type: "human", order: 0, connId: this.connId },
       },
     });
-    this._setupPresence(playerId);
-    return { code, playerId };
+    this._setupPresence();
+    return { code, playerId, game: null };
   }
 
   async joinRoom(code, name) {
     code = code.toUpperCase().trim();
-    const roomRef = ref(this.db, `rooms/${code}`);
-    const snap = await get(roomRef);
+    const snap = await get(ref(this.db, `rooms/${code}`));
     if (!snap.exists()) throw new Error("Room not found. Check the code and try again.");
     const room = snap.val();
-    if (room.meta?.started) throw new Error("That game has already started.");
+
+    if (room.meta?.started) {
+      // Joining a game in progress under the same name you played with puts
+      // you back in your seat (new phone, cleared browser, etc.).
+      const wanted = name.trim().toLowerCase();
+      const match = Object.entries(room.players || {}).find(
+        ([, p]) => p.type === "human" && p.name.trim().toLowerCase() === wanted
+      );
+      if (!match) {
+        throw new Error("That game has already started. To get back in, enter the same name you played with.");
+      }
+      if (match[1].connId) throw new Error(`${match[1].name} is already connected to that game.`);
+      return this.rejoinRoom(code, match[0]);
+    }
 
     const playerId = randomId();
     const existingCount = room.players ? Object.keys(room.players).length : 0;
@@ -109,16 +129,49 @@ export class NetSession {
       order: existingCount,
       connId: this.connId,
     });
-    this._setupPresence(playerId);
-    return { code, playerId };
+    this._setupPresence();
+    return { code, playerId, game: null };
   }
 
-  // Only clears the live connection marker on disconnect, not the whole
-  // player record -- a family member who briefly drops (phone screen lock,
-  // wifi hiccup) doesn't get wiped from the lobby list.
-  _setupPresence(playerId) {
-    const connMarker = ref(this.db, `rooms/${this.roomCode}/players/${playerId}/connId`);
-    onDisconnect(connMarker).remove();
+  // Back into a room this browser was already in (see getSavedSession), or
+  // into a seat claimed by name from joinRoom.
+  async rejoinRoom(code, playerId) {
+    const snap = await get(ref(this.db, `rooms/${code}`));
+    if (!snap.exists()) throw new Error("That game no longer exists.");
+    const room = snap.val();
+    if (!room.players?.[playerId]) throw new Error("You're no longer in that game.");
+    if (room.meta?.started && !room.meta.game) {
+      throw new Error("That game was started on an older version and can't be rejoined.");
+    }
+    this.roomCode = code;
+    this.myPlayerId = playerId;
+    this.isHost = room.meta?.hostPlayerId === playerId;
+    this._setupPresence();
+    return { code, playerId, game: room.meta?.game ?? null };
+  }
+
+  // Marks this player connected whenever Firebase is connected -- including
+  // after a dropout -- and arranges for the server to clear the marker the
+  // moment the connection is lost. The player record itself stays, so a
+  // brief dropout (phone screen lock, wifi hiccup) never costs anyone a seat.
+  _setupPresence() {
+    saveSession(this.roomCode, this.myPlayerId);
+    const connMarker = ref(this.db, `rooms/${this.roomCode}/players/${this.myPlayerId}/connId`);
+    onValue(ref(this.db, ".info/connected"), (snap) => {
+      this.connected = snap.val() === true;
+      this._connCbs.forEach((cb) => cb(this.connected));
+      if (this.connected && !this._left) {
+        onDisconnect(connMarker)
+          .remove()
+          .then(() => set(connMarker, this.connId))
+          .catch((err) => console.warn("presence", err));
+      }
+    });
+  }
+
+  onConnectionChange(cb) {
+    this._connCbs.push(cb);
+    cb(this.connected);
   }
 
   subscribePlayers(callback) {
@@ -147,76 +200,84 @@ export class NetSession {
     await remove(ref(this.db, `rooms/${this.roomCode}/players/${playerId}`));
   }
 
-  // Host only: locks the room and tells everyone (including itself, via the
-  // same event stream every client reads) to build their local Game.
+  // Host only (lobby): fixes the seating, target and shared seed. Every
+  // client -- the host included -- builds its Game from onGameStarted.
   async startGame(players, targetScore) {
-    await update(ref(this.db, `rooms/${this.roomCode}/meta`), { started: true });
-    await this.broadcast("gameStarted", { players, targetScore });
-  }
-
-  // ---- event stream ----
-
-  async broadcast(type, payload) {
-    await push(ref(this.db, `rooms/${this.roomCode}/events`), {
-      type,
-      payload,
-      connId: this.connId,
-      ts: serverTimestamp(),
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    await update(ref(this.db, `rooms/${this.roomCode}/meta`), {
+      started: true,
+      game: { players, targetScore, seed },
     });
   }
 
-  // Resolves with the next payload of this type from another client. Safe to
-  // call before or after the event actually arrives.
-  next(type) {
-    const queue = this._queues.get(type);
-    if (queue && queue.length) return Promise.resolve(queue.shift());
-    return new Promise((resolve) => {
-      if (!this._waiters.has(type)) this._waiters.set(type, []);
-      this._waiters.get(type).push(resolve);
-    });
-  }
-
-  startListening() {
-    onChildAdded(ref(this.db, `rooms/${this.roomCode}/events`), (snap) => {
-      const entry = snap.val();
-      if (!entry) return;
-      // Every other event type is applied locally by its own sender first
-      // (see rollDice/confirmHold/humanBank/etc.), so self-originated copies
-      // are dropped here to avoid double-applying them. gameStarted is the
-      // one exception: it's the *only* path (for every client, including
-      // the host) that actually constructs the Game and leaves the lobby,
-      // so the sender needs to receive its own copy too.
-      if (entry.connId === this.connId && entry.type !== "gameStarted") return;
-      const waiters = this._waiters.get(entry.type);
-      if (waiters && waiters.length) {
-        waiters.shift()(entry.payload);
-        return;
+  onGameStarted(callback) {
+    let fired = false;
+    onValue(ref(this.db, `rooms/${this.roomCode}/meta/game`), (snap) => {
+      const game = snap.val();
+      if (game && !fired) {
+        fired = true;
+        callback(game);
       }
-      if (!this._queues.has(entry.type)) this._queues.set(entry.type, []);
-      this._queues.get(entry.type).push(entry.payload);
     });
+  }
+
+  // ---- move log ----
+
+  // Loads every move made so far, then keeps listening for new ones.
+  openLog() {
+    if (this._logOpened) return this._logOpened;
+    this._logOpened = (async () => {
+      const eventsRef = ref(this.db, `rooms/${this.roomCode}/events`);
+      const snap = await get(eventsRef);
+      let lastKey = null;
+      snap.forEach((child) => {
+        this._putKey(child.key, child.val());
+        lastKey = child.key;
+      });
+      const live = lastKey ? query(eventsRef, orderByKey(), startAfter(lastKey)) : eventsRef;
+      onChildAdded(live, (child) => this._putKey(child.key, child.val()));
+    })();
+    return this._logOpened;
+  }
+
+  _putKey(key, val) {
+    const i = parseInt(key.slice(1), 10);
+    if (key[0] === "e" && Number.isFinite(i)) this._put(i, val);
+  }
+
+  // Claims log slot i for `entry`. Resolves true if it's ours, false if
+  // someone else got there first (their entry is then what slot i holds).
+  // applyLocally:false means nothing is shown until the server agrees, so a
+  // lost race never flickers in and back out.
+  async submit(i, entry) {
+    try {
+      const res = await runTransaction(
+        ref(this.db, `rooms/${this.roomCode}/events/${slotKey(i)}`),
+        (current) => (current === null ? entry : undefined),
+        { applyLocally: false }
+      );
+      this._put(i, res.snapshot.val());
+      return res.committed;
+    } catch (err) {
+      console.warn("submit failed", err);
+      return false;
+    }
+  }
+
+  // Adds an entry at the end of the log, wherever that is by now.
+  async append(entry) {
+    for (let tries = 0; tries < 50; tries++) {
+      const i = this.logLength;
+      if (await this.submit(i, entry)) return true;
+      if (this.logLength <= i) return false; // an error, not a lost race
+    }
+    return false;
   }
 
   leaveRoom() {
+    clearSavedSession();
+    this._left = true;
     if (!this.roomCode || !this.myPlayerId) return;
     remove(ref(this.db, `rooms/${this.roomCode}/players/${this.myPlayerId}/connId`));
   }
-}
-
-// Inert stand-in for single-device play, so Game never has to branch on
-// "am I online" -- it always has a `net`, real or this no-op. next() resolves
-// only for gameStarted-style flows that are explicitly kicked off elsewhere;
-// for everything else it simply never resolves, which is harmless (offline
-// play never reaches those await points -- see the isHost/CPU authority
-// shortcut in Game).
-export class NullNet {
-  constructor() {
-    this.isHost = true;
-    this.myPlayerId = null;
-  }
-  async broadcast() {}
-  next() {
-    return new Promise(() => {});
-  }
-  startListening() {}
 }

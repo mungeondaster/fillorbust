@@ -1,7 +1,10 @@
-import { buildDeck } from "./constants.js?v=33";
+import { buildDeck } from "./constants.js?v=45";
 
 export class Deck {
-  constructor() {
+  // rng: a seeded generator shared by every player's device (see game.js),
+  // so everyone's deck shuffles -- and reshuffles -- into the same order.
+  constructor(rng = Math.random) {
+    this.rng = rng;
     this.drawPile = buildDeck();
     this.discardPile = [];
     // The card currently "in play" -- it isn't moved to the discard pile
@@ -12,7 +15,7 @@ export class Deck {
 
   shuffle() {
     for (let i = this.drawPile.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this.rng() * (i + 1));
       [this.drawPile[i], this.drawPile[j]] = [this.drawPile[j], this.drawPile[i]];
     }
   }

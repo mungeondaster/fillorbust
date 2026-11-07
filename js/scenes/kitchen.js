@@ -8,7 +8,8 @@
 import * as THREE from "../vendor/three.module.min.js";
 import { GLTFLoader } from "../vendor/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "../vendor/addons/environments/RoomEnvironment.js";
-import { feltTexture } from "./common.js?v=33";
+import { feltTexture } from "./common.js?v=45";
+import { paintCardFace } from "../cardArt.js?v=45";
 
 const BASE = "assets/scenes/kitchen/";
 const FOG = 0x140d08;
@@ -68,35 +69,19 @@ function canvasTex(w, h, paint) {
   return t;
 }
 
-function drawStripes(x, w, h, stripe) {
-  x.fillStyle = "#7a1f2b";
-  x.fillRect(0, 0, w, h);
-  x.strokeStyle = "#8f2534";
-  x.lineWidth = stripe;
-  for (let d = -h; d < w + h; d += stripe * 2) {
-    x.beginPath(); x.moveTo(d, h); x.lineTo(d + h, 0); x.stroke();
-  }
-}
-
-function goldFrame(x, w, h, inset, width) {
-  x.strokeStyle = "#d4af37";
-  x.lineWidth = width;
-  x.strokeRect(inset, inset, w - inset * 2, h - inset * 2);
-}
-
-// Same red-striped back as the 2D draw pile, so the deck reads as "ours".
+// The printed card back (js/cardArt.js), same as the 2D draw pile.
 function cardBackTexture() {
-  return canvasTex(390, 550, (x, w, h) => {
-    drawStripes(x, w, h, 11);
-    goldFrame(x, w, h, 7, 10);
-  });
+  return canvasTex(390, 546, (x, w, h) => paintCardFace(x, "BACK", w, h));
 }
 
+// The real box is black all over.
 function boxSideTexture() {
   return canvasTex(256, 256, (x, w, h) => {
-    x.fillStyle = "#7a1f2b";
+    x.fillStyle = "#0d0d0d";
     x.fillRect(0, 0, w, h);
-    goldFrame(x, w, h, 10, 6);
+    x.strokeStyle = "rgba(255,255,255,0.18)";
+    x.lineWidth = 3;
+    x.strokeRect(9, 9, w - 18, h - 18);
   });
 }
 
@@ -112,65 +97,88 @@ function cardEdgeTexture() {
   });
 }
 
-// The box front: the game's logo, in the same Cinzel gold as the title
-// screen, on deep felt green. The box lies on its side (see BOX_YAW in the
-// build script), so the artwork is laid out landscape and rotated 90 degrees
-// onto the portrait texture -- it then reads upright from the player's seat.
-function cardBoxFrontTexture() {
-  return canvasTex(630, 885, (x, cw) => {
-    x.translate(cw, 0);
-    x.rotate(Math.PI / 2);
-    const w = 885, h = 630;
-    const bg = x.createRadialGradient(w * 0.55, h / 2, 40, w / 2, h / 2, w * 0.6);
-    bg.addColorStop(0, "#1a6e44");
-    bg.addColorStop(0.55, "#0f5132");
-    bg.addColorStop(1, "#08301e");
-    x.fillStyle = bg;
-    x.fillRect(0, 0, w, h);
-    goldFrame(x, w, h, 22, 6);
-    goldFrame(x, w, h, 36, 2);
+// The box front, after the real Fill or Bust box: black, with the title
+// running up the left edge, giant dice faces one to six (the top row cropped
+// by the edge), and a spread of the game's cards in the corner.
+//
+// The cover is portrait. The box lies on its long side on the table (see
+// BOX_YAW in the build script), so the cover is turned to put the title
+// along the top, reading left to right from the player's seat -- just how
+// the real box looks lying there.
+export function paintBoxCover(x, w, h) {
+  x.fillStyle = "#0b0b0b";
+  x.fillRect(0, 0, w, h);
 
-    // Two dice, mid-tumble.
-    const die = (cx, cy, s, rot, pips) => {
-      x.save();
-      x.translate(cx, cy); x.rotate(rot);
-      x.shadowColor = "rgba(0,0,0,0.45)"; x.shadowBlur = 16; x.shadowOffsetY = 8;
-      x.fillStyle = "#fbf6ea";
-      x.beginPath(); x.roundRect(-s / 2, -s / 2, s, s, s * 0.18); x.fill();
-      x.shadowColor = "transparent";
-      x.fillStyle = "#16100b";
-      const q = s * 0.26;
-      for (const [px, py] of pips) {
-        x.beginPath(); x.arc(px * q, py * q, s * 0.09, 0, Math.PI * 2); x.fill();
-      }
-      x.restore();
-    };
-    die(195, 230, 140, -0.3, [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]]);
-    die(250, 395, 120, 0.26, [[0, 0]]);
-    x.fillStyle = "#a8231b"; // red ace, matching the kitchen dice
-    x.save(); x.translate(250, 395); x.beginPath(); x.arc(0, 0, 120 * 0.13, 0, Math.PI * 2); x.fill(); x.restore();
+  // Dice faces 1-6 in two columns, the top row running off the edge.
+  const S = w * 0.352, gap = w * 0.019;
+  const x0 = w * 0.267, y0 = -S * 0.41;
+  const PIPS = {
+    1: [[0, 0]],
+    2: [[-1, -1], [1, 1]],
+    3: [[-1, -1], [0, 0], [1, 1]],
+    4: [[-1, -1], [1, -1], [-1, 1], [1, 1]],
+    5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
+    6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]],
+  };
+  for (let v = 1; v <= 6; v++) {
+    const col = (v - 1) % 2, row = Math.floor((v - 1) / 2);
+    const dx = x0 + col * (S + gap), dy = y0 + row * (S + gap);
+    x.fillStyle = "#fbfbf7";
+    x.beginPath(); x.roundRect(dx, dy, S, S, S * 0.04); x.fill();
+    x.fillStyle = "#0b0b0b";
+    for (const [px, py] of PIPS[v]) {
+      x.beginPath();
+      x.arc(dx + S / 2 + px * S * 0.29, dy + S / 2 + py * S * 0.29, S * 0.088, 0, Math.PI * 2);
+      x.fill();
+    }
+  }
 
-    const gold = x.createLinearGradient(0, 120, 0, 480);
-    gold.addColorStop(0, "#f7e7a1");
-    gold.addColorStop(0.5, "#e2c158");
-    gold.addColorStop(1, "#b98f26");
-    const tx = 600;
-    x.textAlign = "center";
-    x.textBaseline = "middle";
-    x.shadowColor = "rgba(0,0,0,0.55)"; x.shadowBlur = 10; x.shadowOffsetY = 5;
-    x.fillStyle = gold;
-    x.font = "700 132px Cinzel, Georgia, serif";
-    x.fillText("FILL", tx, 200);
-    x.fillStyle = "#fdfaf3";
-    x.font = "italic 600 52px Cinzel, Georgia, serif";
-    x.fillText("or", tx, 304);
-    x.fillStyle = gold;
-    x.font = "700 132px Cinzel, Georgia, serif";
-    x.fillText("BUST", tx, 408);
+  // FILL OR BUST! up the left side, tops of the letters facing left.
+  const capH = w * 0.19;
+  x.save();
+  x.translate(w * 0.125, h / 2);
+  x.rotate(-Math.PI / 2);
+  x.font = `${capH / 0.87}px Anton, Impact, sans-serif`;
+  x.textAlign = "center";
+  x.textBaseline = "alphabetic";
+  const title = "FILL OR BUST!";
+  x.scale((h * 0.95) / x.measureText(title).width, 1);
+  x.fillStyle = "#fbfbf7";
+  x.fillText(title, 0, capH / 2);
+  x.restore();
+  x.fillStyle = "#fbfbf7";
+  x.font = `${w * 0.03}px sans-serif`;
+  x.fillText("®", w * 0.02, w * 0.045);
+
+  // The fan of cards, white-edged, two rows.
+  const cw = w * 0.235, ch = cw * 1.4;
+  const card = (id, cx, cy, deg) => {
+    x.save();
+    x.translate(w * cx, h * cy);
+    x.rotate((deg * Math.PI) / 180);
+    x.shadowColor = "rgba(0,0,0,0.6)"; x.shadowBlur = 14; x.shadowOffsetY = 5;
+    x.fillStyle = "#fbfbf7";
+    const b = cw * 0.045;
+    x.beginPath(); x.roundRect(-cw / 2 - b, -ch / 2 - b, cw + 2 * b, ch + 2 * b, cw * 0.07); x.fill();
     x.shadowColor = "transparent";
-    x.fillStyle = "rgba(253,250,243,0.85)";
-    x.font = "600 30px Fredoka, sans-serif";
-    x.fillText("A dice & card push-your-luck game", w / 2, 548);
+    x.beginPath(); x.roundRect(-cw / 2, -ch / 2, cw, ch, cw * 0.05); x.clip();
+    x.translate(-cw / 2, -ch / 2);
+    paintCardFace(x, id, cw, ch);
+    x.restore();
+  };
+  card("FILL_1000", 0.42, 0.63, -13);
+  card("DOUBLE_TROUBLE", 0.63, 0.615, -2);
+  card("BONUS_500", 0.84, 0.63, 10);
+  card("VENGEANCE", 0.43, 0.83, -8);
+  card("MUST_BUST", 0.64, 0.835, 3);
+  card("NO_DICE", 0.85, 0.83, 13);
+}
+
+function cardBoxFrontTexture() {
+  return canvasTex(630, 885, (x, w, h) => {
+    x.translate(w, h);
+    x.rotate(Math.PI); // see paintBoxCover
+    paintBoxCover(x, w, h);
   });
 }
 
@@ -181,10 +189,10 @@ export default {
   async build({ root, renderer, quality }) {
     const texLoader = new THREE.TextureLoader();
     const [gltf, info, lmTable, lmTray] = await Promise.all([
-      new GLTFLoader().loadAsync(BASE + "kitchen.glb?v=33"),
-      fetch(BASE + "scene.json?v=33").then((r) => r.json()),
-      loadTex(texLoader, BASE + "lm_table.jpg?v=33"),
-      loadTex(texLoader, BASE + "lm_tray.jpg?v=33"),
+      new GLTFLoader().loadAsync(BASE + "kitchen.glb?v=45"),
+      fetch(BASE + "scene.json?v=45").then((r) => r.json()),
+      loadTex(texLoader, BASE + "lm_table.jpg?v=45"),
+      loadTex(texLoader, BASE + "lm_tray.jpg?v=45"),
     ]);
     const lightmaps = { lm_table: lmTable, lm_tray: lmTray };
     for (const t of Object.values(lightmaps)) {
@@ -203,6 +211,7 @@ export default {
       await Promise.all([
         document.fonts.load("700 64px Cinzel"),
         document.fonts.load("600 24px Fredoka"),
+        document.fonts.load("40px Anton"),
       ]);
     } catch {}
     const pad = scorepadTexture();
