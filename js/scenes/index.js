@@ -3,8 +3,8 @@
 // To add one (casino, saloon...): create js/scenes/<id>.js exporting
 // { id, name, build(ctx) } and list it here.
 export const SCENES = [
-  { id: "kitchen", name: "Kitchen Table", load: () => import("./kitchen.js?v=55") },
-  { id: "classic", name: "Classic Felt", load: () => import("./classic.js?v=55") },
+  { id: "kitchen", name: "Kitchen Table", load: () => import("./kitchen.js?v=59") },
+  { id: "classic", name: "Classic Felt", load: () => import("./classic.js?v=59") },
 ];
 
 const KEY = "fob.scene";

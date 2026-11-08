@@ -85,7 +85,7 @@ function fill1000() {
     bg(WHITE) +
       `<rect x="44" y="106" width="162" height="138" fill="${RED}"/>` +
       mirrored(
-        word("FILL", { top: 22, h: 80, w: 128, fill: RED, stroke: WHITE, sw: 6 }) +
+        word("FILL", { top: 22, h: 80, w: 128, fill: RED, stroke: BLACK, sw: 5 }) +
           word("1000", { top: 114, h: 54, w: 146, fill: WHITE, stroke: BLACK, sw: 7 })
       ),
     "Fill 1000"
@@ -172,7 +172,6 @@ export function titleLogoSVG(n = 0) {
     `<g transform="translate(${cx} ${cy}) skewX(-12) translate(${-cx} ${-cy})">` +
     word("FILL OR BUST!", { top: cy - 42, h: 82, w: 500, cx, fill: RED }) +
     `</g></g></g>` +
-    `<rect x="16" y="16" width="${LW - 32}" height="${LH - 32}" rx="11" fill="none" stroke="${WHITE}" stroke-width="4"/>` +
     `</svg>`
   );
 }

@@ -1,11 +1,11 @@
-import { Dice3D } from "./dice3d.js?v=55";
-import { CardTable } from "./cardsUI.js?v=55";
-import { Deck } from "./deck.js?v=55";
-import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=55";
-import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=55";
-import { LocalNet } from "./movelog.js?v=55";
-import { playBank, playBust, sfx, setSoundGate } from "./sound.js?v=55";
-import { playCardStinger } from "./stingers.js?v=55";
+import { Dice3D } from "./dice3d.js?v=59";
+import { CardTable } from "./cardsUI.js?v=59";
+import { Deck } from "./deck.js?v=59";
+import { scoreSelection, hasAnyScore, bestSelection } from "./scoring.js?v=59";
+import { cpuShouldBank, cpuThinkDelay } from "./ai.js?v=59";
+import { LocalNet } from "./movelog.js?v=59";
+import { playBank, playBust, sfx, setSoundGate } from "./sound.js?v=59";
+import { playCardStinger } from "./stingers.js?v=59";
 
 const BONUS_VALUE = { BONUS_300: 300, BONUS_400: 400, BONUS_500: 500 };
 
@@ -41,8 +41,8 @@ export class Game {
   // net: a NetSession for online play, or omitted for single-device play.
   // myPlayerId: this device's own seat index online; null on a single device
   // (where every human seat is "mine").
-  constructor({ diceContainer, cardContainer, players, targetScore, ui, net, myPlayerId, seed }) {
-    this.dice3d = new Dice3D(diceContainer);
+  constructor({ diceContainer, cardContainer, players, targetScore, ui, net, myPlayerId, seed, dice3d }) {
+    this.dice3d = dice3d ?? new Dice3D(diceContainer);
     this.cardTable = new CardTable(cardContainer);
     this.seed = (seed ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
     this.deck = new Deck(mulberry32(this.seed));
@@ -190,8 +190,11 @@ export class Game {
         if (c.type === "bank") return this.bank();
       }
       this.resetForContinue();
-      // "You do not draw another card after each FILL when playing Must Bust."
-      if (!this.cardFlags.mustBust && !(await this.drawCardPhase())) return;
+      // Keep playing the same card while it still needs more: "You do not
+      // draw another card after each FILL when playing Must Bust", and Double
+      // Trouble needs its second FILL on the same card before a new draw.
+      const sameCard = this.cardFlags.mustBust || this.cardFlags.doubleTroublePending > 0;
+      if (!sameCard && !(await this.drawCardPhase())) return;
       mayBank = false;
     }
   }
@@ -427,6 +430,9 @@ export class Game {
   // player may decline (or must, if they're the sole leader), in which case
   // a replacement is drawn. Returns false if the card ended the turn.
   async drawCardPhase() {
+    // A new card starts with a clean slate (the previous card is resolved by
+    // the time another is drawn), so nothing leaks from one card to the next.
+    this.cardFlags = this._freshCardFlags();
     let card = await this.drawCard();
     for (;;) {
       this.currentCard = card;

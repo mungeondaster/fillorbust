@@ -4,7 +4,7 @@
 // printed face and the red back show. Plain DOM + CSS 3D transforms, one
 // requestAnimationFrame loop, paused whenever the title screen is hidden.
 
-import { cardFaceSVG, cardBackSVG } from "./cardArt.js?v=55";
+import { cardFaceSVG, cardBackSVG } from "./cardArt.js?v=59";
 
 const FACES = ["NO_DICE", "MUST_BUST", "DOUBLE_TROUBLE", "FILL_1000", "BONUS_300", "BONUS_400", "BONUS_500", "VENGEANCE"];
 const CARD_W = 74;

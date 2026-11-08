@@ -6,7 +6,7 @@
 <title>Fill or Bust</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Cinzel:wght@600;700&family=Rubik+Mono+One&family=Anton&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=55">
+<link rel="stylesheet" href="css/style.css?v=59">
 </head>
 <body>
 
@@ -36,8 +36,8 @@
       <div class="setup-section">
         <label>Target Score</label>
         <select id="targetScoreSel">
-          <option value="5000">5,000</option>
-          <option value="10000" selected>10,000</option>
+          <option value="5000" selected>5,000</option>
+          <option value="10000">10,000</option>
         </select>
       </div>
 
@@ -94,8 +94,8 @@
       <div class="setup-section">
         <label>Target Score</label>
         <select id="lobbyTargetScoreSel">
-          <option value="5000">5,000</option>
-          <option value="10000" selected>10,000</option>
+          <option value="5000" selected>5,000</option>
+          <option value="10000">10,000</option>
         </select>
       </div>
       <button id="lobbyAddCpuBtn" class="secondary-btn">+ Add CPU Player</button>
@@ -225,6 +225,7 @@
     <div class="modal-card win-body">
       <div id="gameOverText"></div>
       <button id="playAgainBtn" class="primary-btn big">Play Again</button>
+      <button id="quitToMenuBtn" class="secondary-btn big">Quit to Menu</button>
     </div>
   </div>
 </div>
@@ -254,6 +255,6 @@
 <script type="importmap">
 { "imports": { "three": "./js/vendor/three.module.min.js" } }
 </script>
-<script type="module" src="js/main.js?v=55"></script>
+<script type="module" src="js/main.js?v=59"></script>
 </body>
 </html>

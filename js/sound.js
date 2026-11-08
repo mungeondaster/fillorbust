@@ -24,7 +24,7 @@ let musicGain = null;
 let musicEl = null;
 
 const BASE = new URL("../assets/sounds/", import.meta.url).href; // works from any page
-const V = "?v=55";
+const V = "?v=59";
 
 // Sample groups; a random member is picked each time (never the same one
 // twice in a row) so repeated sounds don't read as a loop.

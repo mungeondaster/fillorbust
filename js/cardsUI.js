@@ -1,5 +1,5 @@
-import { sfx } from "./sound.js?v=55";
-import { cardFaceSVG, cardBackSVG } from "./cardArt.js?v=55";
+import { sfx } from "./sound.js?v=59";
+import { cardFaceSVG, cardBackSVG } from "./cardArt.js?v=59";
 
 // The printed face of a card (falls back to its name in plain text).
 function faceMarkup(card) {

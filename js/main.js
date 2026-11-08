@@ -1,11 +1,11 @@
-import { Game } from "./game.js?v=55";
-import { Dice3D } from "./dice3d.js?v=55";
-import { unlockAudio, preloadSounds, sfx } from "./sound.js?v=55";
-import { attachSoundButton } from "./soundPanel.js?v=55";
-import { titleLogoSVG, cardFaceSVG } from "./cardArt.js?v=55";
-import { startFallingCards } from "./fallingCards.js?v=55";
-import { startSplash } from "./splash.js?v=55";
-import { getSavedSession, clearSavedSession } from "./movelog.js?v=55";
+import { Game } from "./game.js?v=59";
+import { Dice3D } from "./dice3d.js?v=59";
+import { unlockAudio, preloadSounds, sfx } from "./sound.js?v=59";
+import { attachSoundButton } from "./soundPanel.js?v=59";
+import { titleLogoSVG, cardFaceSVG } from "./cardArt.js?v=59";
+import { startFallingCards } from "./fallingCards.js?v=59";
+import { startSplash } from "./splash.js?v=59";
+import { getSavedSession, clearSavedSession } from "./movelog.js?v=59";
 
 // Start downloading the table sounds while players are still on the menu.
 preloadSounds();
@@ -45,6 +45,8 @@ const startGameBtn = document.getElementById("startGameBtn");
 const targetScoreSel = document.getElementById("targetScoreSel");
 
 let playerRows = [];
+let sharedDice3d = null; // the 3D table, reused by every game this visit
+let teardownGame = null; // removes the current game screen's listeners
 
 function addPlayerRow(defaultName, defaultType) {
   const row = document.createElement("div");
@@ -163,7 +165,7 @@ function setupOnlineMode() {
       clearFormError(rejoinBox);
       rejoinBtn.disabled = true;
       try {
-        const { NetSession } = await import("./net.js?v=55");
+        const { NetSession } = await import("./net.js?v=59");
         const net = new NetSession();
         const { game } = await net.rejoinRoom(saved.code, saved.playerId);
         enterRoom(net, game);
@@ -199,7 +201,7 @@ function setupOnlineMode() {
     const name = createNameInput.value.trim() || "Host";
     createRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=55");
+      const { NetSession } = await import("./net.js?v=59");
       const net = new NetSession();
       await net.createRoom(name);
       enterRoom(net, null);
@@ -220,7 +222,7 @@ function setupOnlineMode() {
     }
     joinRoomBtn.disabled = true;
     try {
-      const { NetSession } = await import("./net.js?v=55");
+      const { NetSession } = await import("./net.js?v=59");
       const net = new NetSession();
       // Joining a game already under way with your old name puts you back
       // in your seat.
@@ -318,6 +320,11 @@ function enterLobby(net) {
 }
 
 function launchGame(players, targetScore, netInfo) {
+  // Every listener below is tied to this game; quitting to the menu removes
+  // them all, so starting another game never doubles anything up.
+  teardownGame?.();
+  const ac = new AbortController();
+  const on = (el, type, fn) => el.addEventListener(type, fn, { signal: ac.signal });
   const diceContainer = document.getElementById("diceCanvas");
   const cardContainer = document.getElementById("cardTable");
   const statusEl = document.getElementById("statusText");
@@ -567,21 +574,29 @@ function launchGame(players, targetScore, netInfo) {
     slot.appendChild(grid);
   }
 
-  game = new Game({
-    diceContainer,
-    cardContainer,
-    players,
-    targetScore,
-    ui,
-    net: netInfo?.net,
-    myPlayerId: netInfo?.myPlayerId,
-    seed: netInfo?.seed,
-  });
+  const newGame = () =>
+    new Game({
+      diceContainer,
+      cardContainer,
+      players,
+      targetScore,
+      ui,
+      net: netInfo?.net,
+      myPlayerId: netInfo?.myPlayerId,
+      seed: netInfo?.seed,
+      dice3d: sharedDice3d, // one 3D table for the whole visit
+    });
+  game = newGame();
+  sharedDice3d = game.dice3d;
+  teardownGame = () => {
+    ac.abort();
+    teardownGame = null;
+  };
 
   if (online) watchConnections(game, netInfo.net, players, () => ui.renderPlayers(game.players, game.gameOver ? -1 : game.currentPlayerIndex), (seats) => (connectedSeats = seats));
 
   dieSlots.forEach((slot, i) => {
-    slot.addEventListener("click", () => {
+    on(slot, "click", () => {
       if (!slot.classList.contains("clickable")) return;
       game.toggleSelect(i);
     });
@@ -591,27 +606,48 @@ function launchGame(players, targetScore, netInfo) {
   game.dice3d.onDieClick = (i) => game.toggleSelect(i);
   document.getElementById("targetLabel").textContent = `to ${fmt(targetScore)}`;
 
-  rollBtn.addEventListener("click", () => game.rollDice());
-  bankBtn.addEventListener("click", () => game.humanBank());
-  confirmBtn.addEventListener("click", () => game.confirmHold());
-  continueFillBtn.addEventListener("click", () => game.humanContinueAfterFill());
-  bankFillBtn.addEventListener("click", () => {
+  on(rollBtn, "click", () => game.rollDice());
+  on(bankBtn, "click", () => game.humanBank());
+  on(confirmBtn, "click", () => game.confirmHold());
+  on(continueFillBtn, "click", () => game.humanContinueAfterFill());
+  on(bankFillBtn, "click", () => {
     fillPrompt.classList.add("hidden");
     game.humanBank();
   });
-  playAgainBtn.addEventListener("click", () => window.location.reload());
+  // Game over: Play Again restarts this same setup right here (same table,
+  // music keeps going); Quit to Menu goes back to the setup screen with the
+  // player list as it was. Online, a rematch needs every device to restart
+  // together, so there it is Quit only for now.
+  playAgainBtn.classList.toggle("hidden", online);
+  on(playAgainBtn, "click", () => {
+    if (!game?.gameOver || online) return;
+    gameOverModal.classList.add("hidden");
+    game = newGame();
+    window.__game = game;
+  });
+  on(document.getElementById("quitToMenuBtn"), "click", () => {
+    if (online) {
+      netInfo.net.leaveRoom();
+      window.location.reload();
+      return;
+    }
+    gameOverModal.classList.add("hidden");
+    teardownGame();
+    gameScreen.classList.add("hidden");
+    setupScreen.classList.remove("hidden");
+  });
   // In-game confirm (not window.confirm, which some embedded/mobile
   // browsers block or auto-dismiss).
   const leaveModal = document.getElementById("leaveModal");
-  mainMenuBtn.addEventListener("click", () => leaveModal.classList.remove("hidden"));
-  document.getElementById("leaveCancelBtn").addEventListener("click", () => leaveModal.classList.add("hidden"));
-  leaveModal.addEventListener("click", (e) => {
+  on(mainMenuBtn, "click", () => leaveModal.classList.remove("hidden"));
+  on(document.getElementById("leaveCancelBtn"), "click", () => leaveModal.classList.add("hidden"));
+  on(leaveModal, "click", (e) => {
     if (e.target === leaveModal) leaveModal.classList.add("hidden");
   });
-  document.addEventListener("keydown", (e) => {
+  on(document, "keydown", (e) => {
     if (e.key === "Escape") leaveModal.classList.add("hidden");
   });
-  document.getElementById("leaveConfirmBtn").addEventListener("click", () => {
+  on(document.getElementById("leaveConfirmBtn"), "click", () => {
     netInfo?.net.leaveRoom();
     window.location.reload();
   });

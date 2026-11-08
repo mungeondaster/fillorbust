@@ -15,11 +15,11 @@
 <body>
 <script type="importmap">{ "imports": { "three": "../js/vendor/three.module.min.js" } }</script>
 <script type="module">
-  import { cardFaceSVG } from "../js/cardArt.js?v=55";
+  import { cardFaceSVG } from "../js/cardArt.js?v=59";
   await document.fonts.load("40px Anton");
   const ids = ["BACK", "NO_DICE", "MUST_BUST", "DOUBLE_TROUBLE", "FILL_1000", "BONUS_500", "VENGEANCE", "BONUS_300", "BONUS_400"];
   // The box cover, flat and upright, as painted onto the 3D card box.
-  const { paintBoxCover } = await import("../js/scenes/kitchen.js?v=55");
+  const { paintBoxCover } = await import("../js/scenes/kitchen.js?v=59");
   const cv = document.createElement("canvas");
   cv.width = 630; cv.height = 885;
   cv.style.cssText = "width:240px;height:337px;border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,.6)";

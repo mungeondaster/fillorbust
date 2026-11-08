@@ -8,8 +8,8 @@
 import * as THREE from "../vendor/three.module.min.js";
 import { GLTFLoader } from "../vendor/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "../vendor/addons/environments/RoomEnvironment.js";
-import { feltTexture } from "./common.js?v=55";
-import { paintCardFace } from "../cardArt.js?v=55";
+import { feltTexture } from "./common.js?v=59";
+import { paintCardFace } from "../cardArt.js?v=59";
 
 const BASE = "assets/scenes/kitchen/";
 const FOG = 0x140d08;
@@ -109,29 +109,38 @@ export function paintBoxCover(x, w, h) {
   x.fillStyle = "#0b0b0b";
   x.fillRect(0, 0, w, h);
 
-  // Dice faces 1-6 in two columns, the top row running off the edge.
-  const S = w * 0.352, gap = w * 0.019;
-  const x0 = w * 0.267, y0 = -S * 0.41;
+  // Dice faces in two rows of three, right of the card fan, sized and
+  // placed after the real box. Laid out in the box's own landscape frame
+  // (title edge on top): X runs along the long side (h), Y down the short
+  // side (w).
+  x.save();
+  x.translate(0, h);
+  x.rotate(-Math.PI / 2);
+  const S = h * 0.145, gap = h * 0.027;
+  const X0 = h * 0.455, Y0 = w * 0.37;
   const PIPS = {
     1: [[0, 0]],
     2: [[-1, -1], [1, 1]],
     3: [[-1, -1], [0, 0], [1, 1]],
     4: [[-1, -1], [1, -1], [-1, 1], [1, 1]],
     5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
-    6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]],
+    6: [[-1, -1], [0, -1], [1, -1], [-1, 1], [0, 1], [1, 1]],
   };
-  for (let v = 1; v <= 6; v++) {
-    const col = (v - 1) % 2, row = Math.floor((v - 1) / 2);
-    const dx = x0 + col * (S + gap), dy = y0 + row * (S + gap);
-    x.fillStyle = "#fbfbf7";
-    x.beginPath(); x.roundRect(dx, dy, S, S, S * 0.04); x.fill();
-    x.fillStyle = "#0b0b0b";
-    for (const [px, py] of PIPS[v]) {
-      x.beginPath();
-      x.arc(dx + S / 2 + px * S * 0.29, dy + S / 2 + py * S * 0.29, S * 0.088, 0, Math.PI * 2);
-      x.fill();
-    }
-  }
+  const FACES = [[5, 3, 1], [6, 4, 2]];
+  FACES.forEach((rowVals, row) =>
+    rowVals.forEach((v, col) => {
+      const dx = X0 + col * (S + gap), dy = Y0 + row * (S + gap);
+      x.fillStyle = "#fbfbf7";
+      x.beginPath(); x.roundRect(dx, dy, S, S, S * 0.05); x.fill();
+      x.fillStyle = "#0b0b0b";
+      for (const [px, py] of PIPS[v]) {
+        x.beginPath();
+        x.arc(dx + S / 2 + px * S * 0.28, dy + S / 2 + py * S * 0.28, S * 0.095, 0, Math.PI * 2);
+        x.fill();
+      }
+    })
+  );
+  x.restore();
 
   // FILL OR BUST! up the left side, tops of the letters facing left.
   const capH = w * 0.19;
@@ -166,12 +175,12 @@ export function paintBoxCover(x, w, h) {
     paintCardFace(x, id, cw, ch);
     x.restore();
   };
-  card("FILL_1000", 0.42, 0.63, -13);
-  card("DOUBLE_TROUBLE", 0.63, 0.615, -2);
-  card("BONUS_500", 0.84, 0.63, 10);
-  card("VENGEANCE", 0.43, 0.83, -8);
-  card("MUST_BUST", 0.64, 0.835, 3);
-  card("NO_DICE", 0.85, 0.83, 13);
+  card("FILL_1000", 0.42, 0.665, -13);
+  card("DOUBLE_TROUBLE", 0.63, 0.650, -2);
+  card("BONUS_500", 0.84, 0.665, 10);
+  card("VENGEANCE", 0.43, 0.865, -8);
+  card("MUST_BUST", 0.64, 0.870, 3);
+  card("NO_DICE", 0.85, 0.865, 13);
 }
 
 function cardBoxFrontTexture() {
@@ -189,10 +198,10 @@ export default {
   async build({ root, renderer, quality }) {
     const texLoader = new THREE.TextureLoader();
     const [gltf, info, lmTable, lmTray] = await Promise.all([
-      new GLTFLoader().loadAsync(BASE + "kitchen.glb?v=55"),
-      fetch(BASE + "scene.json?v=55").then((r) => r.json()),
-      loadTex(texLoader, BASE + "lm_table.jpg?v=55"),
-      loadTex(texLoader, BASE + "lm_tray.jpg?v=55"),
+      new GLTFLoader().loadAsync(BASE + "kitchen.glb?v=59"),
+      fetch(BASE + "scene.json?v=59").then((r) => r.json()),
+      loadTex(texLoader, BASE + "lm_table.jpg?v=59"),
+      loadTex(texLoader, BASE + "lm_tray.jpg?v=59"),
     ]);
     const lightmaps = { lm_table: lmTable, lm_tray: lmTray };
     for (const t of Object.values(lightmaps)) {
